@@ -77,7 +77,7 @@ struct FollowPanel: View {
             claudeSection
         }
         .formStyle(.grouped)
-        .onAppear { keyField.hasKey = APIKeyStore.hasKey }
+        .onAppear { keyField.refresh() }
     }
 
     private var statusDetail: String {
@@ -94,10 +94,34 @@ struct FollowPanel: View {
 
     private var claudeSection: some View {
         @Bindable var follow = follow
+        let claude = follow.claude
         return Section {
+            Picker("Run Claude via", selection: Binding(get: { claude.backend }, set: { claude.backend = $0; keyField.refresh() })) {
+                ForEach(ClaudeBackend.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .help("Claude Code: use the Claude Code app installed on this Mac and the Claude account it's signed in with — no API key needed. API Key: call the Anthropic API directly with a key from console.anthropic.com.")
+
+            if claude.backend == .claudeCode {
+                if let path = claude.cli.displayPath {
+                    Label("Using Claude Code at \(path)", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.callout)
+                        .help("Each check runs `claude -p` with the camera frame, tools off, and counts towards your Claude plan's usage. If Claude Code isn't signed in, open Terminal and run `claude` once.")
+                } else {
+                    Label("Claude Code isn't installed on this Mac.", systemImage: "xmark.circle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                    Button("Install Claude Code…") {
+                        NSWorkspace.shared.open(URL(string: "https://claude.com/claude-code")!)
+                    }
+                    .help("Open the Claude Code page in your browser. After installing, restart this app.")
+                }
+            }
+
             Toggle("Ask Claude for help", isOn: $follow.claudeEnabled)
-                .disabled(!keyField.hasKey)
-                .help("Every few seconds, send one camera frame to Claude (claude-opus-5-5). It reports obstacles in the path — the rover then only turns, never drives forward, for 4 seconds — and where the target went when the Mac loses it. Costs API credits.")
+                .disabled(!claude.isAvailable)
+                .help("Every few seconds, show Claude one camera frame. It reports obstacles in the path — the rover then only turns, never drives forward, for 4 seconds — and where the target went when the Mac loses it. Each answer takes about 5 seconds.")
 
             LabeledContent {
                 Stepper(value: $follow.claudeInterval, in: 3...20, step: 1) {
@@ -105,7 +129,7 @@ struct FollowPanel: View {
                 }
             } label: { Text("Check") }
             .disabled(!follow.claudeEnabled)
-            .help("How often to ask Claude while following. While searching it asks twice as often (at most every 2.5 s). Fewer checks cost less.")
+            .help("How often to ask Claude while following. While searching it asks twice as often (at most every 2.5 s). Fewer checks use less of your Claude plan or API credits.")
 
             if let a = follow.advice {
                 VStack(alignment: .leading, spacing: 4) {
@@ -114,47 +138,50 @@ struct FollowPanel: View {
                             .foregroundStyle(a.safeToDrive && !a.obstacleAhead ? Color.green : Color.orange)
                         Text(a.note.isEmpty ? "—" : a.note)
                     }
-                    Text("\(a.targetVisible ? "Sees the \(follow.target.rawValue) (\(a.direction.rawValue))" : "Doesn't see the \(follow.target.rawValue)") · \(String(format: "%.1f s", a.latency)) · \(follow.claudeRequests) requests")
+                    Text("\(a.targetVisible ? "Sees the \(follow.target.rawValue) (\(a.direction.rawValue))" : "Doesn't see the \(follow.target.rawValue)") · \(String(format: "%.1f s", a.latency)) · \(follow.claudeRequests) checks")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                .help("Claude's latest look at the camera")
+                .help("Claude's latest look at the camera.")
             }
             if let e = follow.claudeError {
                 Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
             }
 
-            if keyField.hasKey {
-                HStack {
-                    Label("API key saved in Keychain", systemImage: "key.fill").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Remove") {
-                        APIKeyStore.delete()
-                        keyField.hasKey = false
-                        follow.claudeEnabled = false
+            if claude.backend == .api {
+                if keyField.hasKey {
+                    HStack {
+                        Label("API key saved in Keychain", systemImage: "key.fill").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Remove") {
+                            APIKeyStore.delete()
+                            keyField.refresh()
+                            follow.claudeEnabled = false
+                        }
+                        .help("Delete the Anthropic API key from this Mac's Keychain.")
                     }
-                    .help("Delete the Anthropic API key from this Mac's Keychain and turn Claude help off.")
-                }
-            } else {
-                SecureField("Anthropic API key", text: $keyField.input)
-                    .help("Paste an API key from console.anthropic.com. It's stored in your login Keychain and only sent to api.anthropic.com.")
-                HStack {
-                    Button("Get a Key…") {
-                        NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!)
+                } else {
+                    SecureField("Anthropic API key", text: $keyField.input)
+                        .help("Paste an API key from console.anthropic.com. It's stored in your login Keychain and only sent to api.anthropic.com.")
+                    HStack {
+                        Button("Get a Key…") {
+                            NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!)
+                        }
+                        .help("Open the Anthropic Console in your browser to create an API key.")
+                        Spacer()
+                        Button("Save Key") {
+                            APIKeyStore.save(keyField.input)
+                            keyField.input = ""
+                            keyField.refresh()
+                        }
+                        .disabled(keyField.input.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .help("Store the key in the Keychain so “Ask Claude for help” can use it.")
                     }
-                    .help("Open the Anthropic Console in your browser to create an API key.")
-                    Spacer()
-                    Button("Save Key") {
-                        if APIKeyStore.save(keyField.input) { keyField.hasKey = APIKeyStore.hasKey }
-                        keyField.input = ""
-                    }
-                    .disabled(keyField.input.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help("Store the key in the Keychain and enable “Ask Claude for help”.")
                 }
             }
         } header: {
             Label("Claude", systemImage: "sparkles")
         } footer: {
-            Text("Optional. Following works without it; Claude adds obstacle checks and a second pair of eyes. Frames go to Anthropic's API only while following with this on.")
+            Text("Optional. Following works without it; Claude adds obstacle checks and a second pair of eyes. Frames go to Anthropic only while following with this on.")
         }
     }
 }
@@ -163,4 +190,5 @@ struct FollowPanel: View {
 final class KeyFieldState: ObservableObject {
     @Published var input = ""
     @Published var hasKey = false
+    func refresh() { hasKey = APIKeyStore.hasKey }
 }

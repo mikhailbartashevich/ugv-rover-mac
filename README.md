@@ -29,7 +29,7 @@ New in this app:
 - One-button Wi‑Fi setup (see below)
 - Game controller support (Xbox, PlayStation, MFi)
 - Save the current frame to your Mac (⌘S), and download media from the rover
-- Low-battery warning, connection status, auto-reconnect
+- Low-battery warning, connection status, auto-reconnect, and **auto-discovery**: if the saved address doesn't answer, the app tries the rover's `.local` name, its hotspot (192.168.50.5) and every address on the Mac's networks
 - Full keyboard control and a Rover menu
 
 ## First-time setup — keep your internet
@@ -47,7 +47,7 @@ Press **F**, the paw button, or *Follow* in the inspector. The rover keeps the t
 - **Stopping:** any manual drive key, Space or STOP ends Follow.
 
 - **Detection** runs on the Mac with Apple's Vision framework, about 8 times a second. On the rover's small, blurry frames the animal detector often misses, so the app falls back to the scene classifier ("there's a cat") combined with salient-object boxes.
-- **Claude** (optional; needs an Anthropic API key, stored in the Keychain) gets one frame every few seconds through the Messages API (`claude-opus-5-5`, low effort, structured JSON output). It reports obstacles in the path, which block forward driving for 4 s, and where the target went, including a bounding box when the Mac's detector misses it.
+- **Claude** (optional) looks at one frame every few seconds. It reports obstacles in the path, which block forward driving for 4 s, and where the target went, including a bounding box when the Mac's detector misses it. By default it runs through the **Claude Code installed on this Mac** (`claude -p` with the image over `--input-format stream-json`, `--json-schema`, tools off), using the account Claude Code is signed in with, so no API key is needed. Alternatively it can call the Messages API with an API key stored in the Keychain. Model: `claude-opus-5-5`, low effort.
 
 ## Controls
 
@@ -97,6 +97,8 @@ Tools/                         icon renderer, mock rover
 
 ## Development
 
+Set `UGV_ROVER_HOST=127.0.0.1:5055` to point the app at a mock rover without touching the saved address.
+
 ```bash
 swift build
 Tools/test.sh                                     # unit tests (works around a SwiftPM cache bug)
@@ -105,6 +107,8 @@ UGV_TEST_ROVER=127.0.0.1:5055 UGV_TEST_ROVER_LOG=$PWD/Tools/mock-rover/data/comm
 # closed-loop Follow test: the mock simulates a camera that turns and moves
 python Tools/mock-rover/mock_rover.py 5056 --world cat.jpg   # needs Pillow
 UGV_TEST_SIM=127.0.0.1:5056 Tools/test.sh --filter Follow
+# discovery: mock on this Mac's LAN address; live Claude Code call on a cat photo
+UGV_TEST_DISCOVERY=192.168.0.10:5057 UGV_TEST_CLAUDE_CODE=cat.jpg Tools/test.sh
 # layout snapshots without touching the screen:
 UGV_SNAPSHOT=/tmp/shot UGV_SNAPSHOT_TABS=hud,modes,media,network,console UGV_SNAPSHOT_QUIT=1 \
   UGVControl.app/Contents/MacOS/UGVControl

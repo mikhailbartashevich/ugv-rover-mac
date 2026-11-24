@@ -16,18 +16,33 @@ public struct ClaudeAdvice: Sendable, Equatable {
     public let latency: TimeInterval
 }
 
-/// Asks Claude about a camera frame over the Messages API (raw HTTP: there's no
-/// official Swift SDK). Used as a slow supervisor next to the on-device tracker:
-/// spotting obstacles and finding the target when the tracker loses it.
+/// Where Claude runs.
+public enum ClaudeBackend: String, CaseIterable, Identifiable, Sendable {
+    /// The Claude Code CLI installed on this Mac (`claude -p`), signed in with your Claude account.
+    case claudeCode
+    /// The Messages API with an Anthropic API key.
+    case api
+    public var id: String { rawValue }
+    public var title: String { self == .claudeCode ? "Claude Code" : "API Key" }
+}
+
+/// Asks Claude about a camera frame. Used as a slow supervisor next to the on-device
+/// tracker: spotting obstacles and finding the target when the tracker loses it.
+/// By default it runs through the locally installed Claude Code, so no API key is needed.
 @MainActor
 public final class ClaudeVision {
     public var model = "claude-opus-5-5"
+    public var backend: ClaudeBackend {
+        didSet { UserDefaults.standard.set(backend.rawValue, forKey: "claudeBackend") }
+    }
+    public let cli = ClaudeCodeCLI()
     private let apiKey: () -> String?
     private let endpoint: URL
     private let session: URLSession
 
     public init(apiKey: @escaping () -> String?) {
         self.apiKey = apiKey
+        backend = UserDefaults.standard.string(forKey: "claudeBackend").flatMap(ClaudeBackend.init) ?? .claudeCode
         let base = ProcessInfo.processInfo.environment["UGV_ANTHROPIC_BASE_URL"] ?? "https://api.anthropic.com"
         endpoint = URL(string: base)!.appendingPathComponent("v1/messages")
         let cfg = URLSessionConfiguration.ephemeral
@@ -37,17 +52,54 @@ public final class ClaudeVision {
 
     public var hasKey: Bool { !(apiKey() ?? "").isEmpty }
 
-    public func advise(jpeg: Data, target: FollowTarget, context: String) async throws -> ClaudeAdvice {
-        guard let key = apiKey(), !key.isEmpty else { throw ClaudeError("No Anthropic API key set.") }
-        let started = Date()
+    /// Whether the selected backend can be used right now.
+    public var isAvailable: Bool {
+        switch backend {
+        case .claudeCode: cli.executable != nil
+        case .api: hasKey
+        }
+    }
 
+    public func advise(jpeg: Data, target: FollowTarget, context: String) async throws -> ClaudeAdvice {
+        let started = Date()
+        let obj: [String: Any]
+        switch backend {
+        case .claudeCode:
+            obj = try await cli.structuredAnswer(system: Self.systemPrompt(target), jpeg: jpeg, text: context,
+                                                 schema: Self.schema, model: model)
+        case .api:
+            obj = try await askAPI(jpeg: jpeg, target: target, context: context)
+        }
+        return Self.parse(obj, latency: Date().timeIntervalSince(started))
+    }
+
+    // MARK: - Messages API (raw HTTP: there's no official Swift SDK)
+
+    private func askAPI(jpeg: Data, target: FollowTarget, context: String) async throws -> [String: Any] {
+        guard let key = apiKey(), !key.isEmpty else { throw ClaudeError("No Anthropic API key set.") }
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.setValue(key, forHTTPHeaderField: "x-api-key")
         req.setValue("2026-10-21", forHTTPHeaderField: "anthropic-version")
         req.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body(jpeg: jpeg, target: target, context: context))
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": model,
+            "max_tokens": 4000,
+            "fallbacks": "default",
+            "output_config": [
+                "effort": "low",
+                "format": ["type": "json_schema", "schema": Self.schema],
+            ],
+            "system": Self.systemPrompt(target),
+            "messages": [[
+                "role": "user",
+                "content": [
+                    ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": jpeg.base64EncodedString()]],
+                    ["type": "text", "text": context],
+                ],
+            ]],
+        ] as [String: Any])
 
         let (data, resp) = try await session.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -62,19 +114,18 @@ public final class ClaudeVision {
             }
         }
         if json["stop_reason"] as? String == "refusal" { throw ClaudeError("Claude declined this frame.") }
-
         let content = json["content"] as? [[String: Any]] ?? []
         guard let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
               let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
             throw ClaudeError("Unexpected reply from Claude.")
         }
-        return Self.parse(obj, latency: Date().timeIntervalSince(started))
+        return obj
     }
 
-    // MARK: - Request
+    // MARK: - Prompt
 
-    private func body(jpeg: Data, target: FollowTarget, context: String) -> [String: Any] {
-        let system = """
+    nonisolated static func systemPrompt(_ target: FollowTarget) -> String {
+        """
         You are the eyes of a small wheeled ground rover (camera about 20 cm above the floor) that is slowly \
         following a \(target.rawValue) around a home. You receive one frame from its forward-facing camera.
         Report whether the \(target.rawValue) is visible and where: which third of the frame its centre is in, \
@@ -84,23 +135,6 @@ public final class ClaudeVision {
         safe_to_drive is false if moving forward slowly could hit something, fall down a step, or get stuck.
         Keep note under 15 words, plain English.
         """
-        return [
-            "model": model,
-            "max_tokens": 4000,
-            "fallbacks": "default",
-            "output_config": [
-                "effort": "low",
-                "format": ["type": "json_schema", "schema": Self.schema],
-            ],
-            "system": system,
-            "messages": [[
-                "role": "user",
-                "content": [
-                    ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": jpeg.base64EncodedString()]],
-                    ["type": "text", "text": context],
-                ],
-            ]],
-        ]
     }
 
     nonisolated(unsafe) static let schema: [String: Any] = [

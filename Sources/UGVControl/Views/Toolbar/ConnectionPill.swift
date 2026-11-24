@@ -39,12 +39,14 @@ struct ConnectionPill: View {
         switch link { case .checking: .gray; case .offline: .red; case .limited: .orange; case .live: .green }
     }
     private var title: String {
-        switch link { case .checking: "Checking…"; case .offline: "No rover"; case .limited: "Limited"; case .live: "Connected" }
+        switch link { case .checking: "Checking…"; case .offline: rover.isSearching ? "Searching…" : "No rover"; case .limited: "Limited"; case .live: "Connected" }
     }
     private var help: String {
         switch link {
         case .checking: "Looking for the rover…"
-        case .offline: rover.lastError ?? "The rover's web app isn't reachable."
+        case .offline: rover.isSearching
+            ? "Looking for the rover: its saved address, its .local name, its own hotspot (192.168.50.5) and every address on this Mac's networks."
+            : "No rover at \(rover.host). The app keeps retrying and searches the network every 15 s. Details: \(rover.lastError ?? "no answer")"
         case .limited: "Driving works over HTTP, but the live control channel (telemetry, modes) is reconnecting."
         case .live: "Connected to \(rover.host)"
         }

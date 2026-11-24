@@ -199,7 +199,7 @@ public final class FollowController {
     // MARK: - Claude
 
     private func askClaudeIfDue(_ frame: CGImage) {
-        guard claudeEnabled, !claudeBusy, claude.hasKey else { return }
+        guard claudeEnabled, !claudeBusy, claude.isAvailable else { return }
         let searching = phase == .searching || phase == .lost || phase == .looking
         let interval = searching ? max(2.5, claudeInterval / 2) : claudeInterval
         if let last = lastClaudeAt, Date().timeIntervalSince(last) < interval { return }

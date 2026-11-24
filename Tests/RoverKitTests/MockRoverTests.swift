@@ -90,3 +90,26 @@ struct MockRoverTests {
         #expect(await rover.sendCommandLine(#"base -c {"T":130}"#))
     }
 }
+
+/// Finds a rover by scanning the network when the saved address is wrong.
+///   python Tools/mock-rover/mock_rover.py 5057 --host <this Mac's LAN IP>
+///   UGV_TEST_DISCOVERY=<LAN IP>:5057 Tools/test.sh --filter Discovery
+@Suite("Discovery", .enabled(if: ProcessInfo.processInfo.environment["UGV_TEST_DISCOVERY"] != nil))
+@MainActor
+struct DiscoveryTests {
+    @Test func findsTheRoverWhenTheSavedAddressIsWrong() async {
+        let target = ProcessInfo.processInfo.environment["UGV_TEST_DISCOVERY"]!
+        let parts = target.split(separator: ":")
+        let ip = String(parts[0])
+        RoverScanner.port = Int(parts[1]) ?? 5000
+        defer { RoverScanner.port = 5000 }
+        let prefix = ip.split(separator: ".").prefix(3).joined(separator: ".")
+
+        let rover = RoverClient()
+        rover.host = "10.255.255.1"            // nothing there
+        await rover.connectOrDiscover(localPrefixes: [prefix])
+        #expect(rover.host == target)
+        #expect(rover.reachable == true)
+        rover.socket.disconnect()
+    }
+}

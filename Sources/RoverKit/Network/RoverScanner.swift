@@ -2,6 +2,9 @@ import Foundation
 
 /// Finds rovers on the local network by probing their web app on port 5000.
 public enum RoverScanner {
+    /// The rover's web app port (configurable for tests).
+    nonisolated(unsafe) public static var port = 5000
+
     /// Probes every host in the given /24 prefixes ("192.168.1").
     public static func scan(prefixes: [String]) async -> [String] {
         await probe(prefixes.flatMap { p in (1...254).map { "\(p).\($0)" } })
@@ -12,6 +15,7 @@ public enum RoverScanner {
     }
 
     public static func probe(_ hosts: [String]) async -> [String] {
+        let port = Self.port
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 1.2
         let session = URLSession(configuration: cfg)
@@ -19,7 +23,7 @@ public enum RoverScanner {
         await withTaskGroup(of: String?.self) { group in
             for ip in hosts {
                 group.addTask {
-                    guard let url = URL(string: "http://\(ip):5000/"),
+                    guard let url = URL(string: "http://\(ip):\(port)/"),
                           let (data, resp) = try? await session.data(from: url),
                           (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
                     let body = String(decoding: data.prefix(20000), as: UTF8.self).lowercased()

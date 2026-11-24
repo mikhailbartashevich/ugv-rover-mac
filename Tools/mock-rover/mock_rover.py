@@ -12,6 +12,7 @@ def log(*a): LOG.write(time.strftime('%H:%M:%S ') + ' '.join(str(x) for x in a) 
 FRAMES = [open(os.path.join(HERE, 'frames', f), 'rb').read() for f in sorted(os.listdir(os.path.join(HERE, 'frames'))) if f.lower().endswith('.jpg')]
 ap = argparse.ArgumentParser()
 ap.add_argument('port', nargs='?', type=int, default=5055)
+ap.add_argument('--host', default='127.0.0.1', help='address to listen on')
 ap.add_argument('--world', help='photo of a cat/dog/person: simulate a camera that turns and moves (needs Pillow)')
 args = ap.parse_args()
 SIM = None
@@ -90,4 +91,4 @@ def on_msg(message):
 def loop():
     while True: update(); time.sleep(2)
 threading.Thread(target=loop, daemon=True).start()
-socketio.run(app, host='127.0.0.1', port=args.port, allow_unsafe_werkzeug=True)
+socketio.run(app, host=args.host, port=args.port, allow_unsafe_werkzeug=True)

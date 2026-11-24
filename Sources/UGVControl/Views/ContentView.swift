@@ -64,7 +64,8 @@ struct ContentView: View {
         try? await Task.sleep(for: .milliseconds(300))
         NSApp.keyWindow?.makeFirstResponder(nil)
 
-        await rover.connect()
+        await net.refresh()
+        await rover.connectOrDiscover(localPrefixes: net.localPrefixes)
         if rover.reachable != true { window.open(.network) }
         DebugSnapshot.run { name in
             var t = Transaction()
@@ -80,10 +81,19 @@ struct ContentView: View {
                 }
             }
         }
+        // Keep the link alive: retry every 5 s, and search the network again every 15 s
+        // (e.g. after the Mac or the rover changes Wi‑Fi).
+        var tick = 0
         while !Task.isCancelled {
-            await net.refresh()
-            if rover.reachable != true { await rover.connect() }
             try? await Task.sleep(for: .seconds(5))
+            await net.refresh()
+            tick += 1
+            guard rover.reachable != true else { continue }
+            if tick % 3 == 0 {
+                await rover.connectOrDiscover(localPrefixes: net.localPrefixes)
+            } else {
+                await rover.connect()
+            }
         }
     }
 }

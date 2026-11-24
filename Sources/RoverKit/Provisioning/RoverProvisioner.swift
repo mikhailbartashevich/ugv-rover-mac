@@ -49,6 +49,7 @@ public final class RoverProvisioner {
             set(1, .running)
             let roverName = try await saveNetwork(term, ssid: ssid, password: password, sudoPassword: sudoPassword)
             set(1, .done, roverName.map { "Rover hostname: \($0)" })
+            if let name = roverName { rover.rememberedHostname = name }
 
             step = 2
             set(2, .running, "Waiting for the hotspot to go down…")

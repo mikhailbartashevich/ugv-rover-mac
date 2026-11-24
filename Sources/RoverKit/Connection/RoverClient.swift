@@ -15,7 +15,7 @@ public final class RoverClient {
     // MARK: Connection
 
     public var host: String {
-        didSet { UserDefaults.standard.set(host, forKey: "roverHost") }
+        didSet { if persistsHost { UserDefaults.standard.set(host, forKey: "roverHost") } }
     }
     public let defaultPort = 5000
     public private(set) var reachable: Bool?
@@ -70,8 +70,21 @@ public final class RoverClient {
     /// Called when the user drives or stops by hand (autopilot uses it to step aside).
     @ObservationIgnored public var onManualOverride: (() -> Void)?
 
+    /// The rover's own hotspot address (AccessPopup).
+    public static let hotspotHost = "192.168.50.5"
+    /// `UGV_ROVER_HOST` (development/tests) overrides the saved address and isn't saved.
+    @ObservationIgnored private let persistsHost: Bool
+    /// True while looking for the rover on the network.
+    public private(set) var isSearching = false
+
     public init() {
-        host = UserDefaults.standard.string(forKey: "roverHost") ?? "192.168.50.5"
+        if let override = ProcessInfo.processInfo.environment["UGV_ROVER_HOST"], !override.isEmpty {
+            host = override
+            persistsHost = false
+        } else {
+            host = UserDefaults.standard.string(forKey: "roverHost") ?? Self.hotspotHost
+            persistsHost = true
+        }
     }
 
     // MARK: - Connection
@@ -84,6 +97,38 @@ public final class RoverClient {
         } else {
             socket.disconnect()
         }
+    }
+
+    /// The rover's hostname, learned during Wi‑Fi setup, for finding it via `<name>.local`.
+    public var rememberedHostname: String? {
+        get { UserDefaults.standard.string(forKey: "roverHostname") }
+        set { UserDefaults.standard.set(newValue, forKey: "roverHostname") }
+    }
+
+    /// Connects to the saved address; if the rover isn't there, looks for it: its
+    /// `.local` name, its own hotspot, then every address on the Mac's networks.
+    /// A rover that's found becomes the saved address.
+    public func connectOrDiscover(localPrefixes: [String]) async {
+        await connect()
+        guard reachable != true, persistsHost, !isSearching else { return }
+        isSearching = true
+        defer { isSearching = false }
+
+        var candidates: [String] = []
+        if let name = rememberedHostname, let ip = await RoverScanner.resolve("\(name).local") { candidates.append(ip) }
+        candidates.append(Self.hotspotHost)
+        for ip in candidates where ip != hostIP {
+            if await RoverScanner.isRover(ip) { return await adopt(ip) }
+        }
+        if let ip = await RoverScanner.scan(prefixes: localPrefixes).first(where: { $0 != hostIP }) {
+            await adopt(ip)
+        }
+    }
+
+    private func adopt(_ ip: String) async {
+        host = RoverScanner.port == defaultPort ? ip : "\(ip):\(RoverScanner.port)"
+        await connect()
+        if reachable == true { show("Found the rover at \(ip)", symbol: "dot.radiowaves.left.and.right") }
     }
 
     public func ping() async {
