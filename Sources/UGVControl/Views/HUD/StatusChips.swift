@@ -4,6 +4,7 @@ import RoverKit
 /// What's active right now: recording, vision mode, reaction, zoom… (top-centre).
 struct StatusChips: View {
     @Environment(RoverClient.self) private var rover
+    @Environment(FollowController.self) private var follow
 
     var body: some View {
         let chips = items
@@ -26,6 +27,14 @@ struct StatusChips: View {
 
     private var items: [Chip] {
         var out: [Chip] = []
+        if follow.isActive {
+            let color: Color = switch follow.phase {
+            case .following, .holding: .green
+            case .blocked, .lost, .noVideo: .orange
+            default: .primary
+            }
+            out.append(Chip(text: "\(follow.target.title): \(follow.phase.title)", symbol: "pawprint.fill", color: color))
+        }
         if !rover.socket.isConnected && rover.reachable == true {
             out.append(Chip(text: "Control channel reconnecting", symbol: "bolt.horizontal.circle", color: .orange))
         }

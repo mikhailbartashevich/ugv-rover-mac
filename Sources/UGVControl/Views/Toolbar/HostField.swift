@@ -13,12 +13,14 @@ struct HostField: View {
             TextField("Rover IP", text: $rover.host)
                 .textFieldStyle(.plain)
                 .frame(width: 150)
+                .help("The rover's address. On its own AccessPopup hotspot it's 192.168.50.5; on your Wi‑Fi it's the IP shown on the rover's screen (line “W:”). Add :port if it isn't 5000. Press Return to connect.")
                 .onSubmit {
                     connect()
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
             Button("Connect", action: connect)
                 .buttonStyle(.borderless)
+                .help("Connect to the rover at this address: checks its web app, opens the live control channel and restarts the video.")
         }
         .padding(.horizontal, 8)
     }

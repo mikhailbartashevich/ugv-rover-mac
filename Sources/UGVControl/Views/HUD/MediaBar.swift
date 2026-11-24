@@ -4,6 +4,7 @@ import RoverKit
 /// Record, photo, zoom and keyboard help (bottom-centre).
 struct MediaBar: View {
     @Environment(RoverClient.self) private var rover
+    @Environment(FollowController.self) private var follow
     @StateObject private var showKeys = ViewFlag()
 
     var body: some View {
@@ -16,7 +17,19 @@ struct MediaBar: View {
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
-                .help("Take a photo on the rover (P)")
+                .help("Take a photo with the rover's camera and store it on the rover (P). Browse and download photos in the inspector's Media tab.")
+
+                Button { follow.toggle() } label: {
+                    Image(systemName: follow.isActive ? "pawprint.fill" : "pawprint")
+                        .font(.title3)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(follow.isActive ? .green : .gray.opacity(0.35))
+                .help(follow.isActive
+                      ? "Following the \(follow.target.rawValue) — \(follow.phase.title.lowercased()). Click (or press F) to stop."
+                      : "Follow the \(follow.target.rawValue): the rover finds it in the video and slowly drives after it, keeping it centred. Settings in the inspector's Follow tab. Shortcut: F.")
 
                 Button { rover.cycleZoom() } label: {
                     Text(rover.zoom.title).font(.callout.weight(.semibold).monospacedDigit())
@@ -24,14 +37,14 @@ struct MediaBar: View {
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .help("Zoom 1× / 2× / 4× (Z)")
+                .help("Digital zoom of the rover's camera: 1× → 2× → 4× (Z). Affects the stream, photos and recordings.")
 
                 Button { showKeys.on.toggle() } label: {
                     Image(systemName: "keyboard").frame(width: 32, height: 32)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .help("Keyboard & controller shortcuts")
+                .help("Show every keyboard and game-controller shortcut.")
                 .popover(isPresented: $showKeys.on, arrowEdge: .top) { KeyboardHelp() }
             }
         }
@@ -59,7 +72,7 @@ private struct RecordButton: View {
         }
         .buttonStyle(.glassProminent)
         .tint(rover.isRecording ? .red : .gray.opacity(0.35))
-        .help(rover.isRecording ? "Stop recording (R)" : "Record video on the rover (R)")
+        .help(rover.isRecording ? "Stop recording; the video is saved on the rover (R). Find it in the inspector's Media tab." : "Record video to the rover's own storage (R). The timer shows how long it's been recording.")
     }
 }
 

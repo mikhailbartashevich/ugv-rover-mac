@@ -3,12 +3,13 @@ import AppKit
 import RoverKit
 
 enum InspectorTab: String, CaseIterable, Identifiable {
-    case modes, media, network, console
+    case modes, follow, media, network, console
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var symbol: String {
         switch self {
         case .modes: "slider.horizontal.3"
+        case .follow: "pawprint"
         case .media: "photo.on.rectangle"
         case .network: "network"
         case .console: "terminal"
@@ -34,6 +35,7 @@ struct ContentView: View {
     @Environment(RoverClient.self) private var rover
     @Environment(NetworkStatus.self) private var net
     @Environment(MJPEGStream.self) private var video
+    @Environment(FollowController.self) private var follow
     @StateObject private var window = WindowState()
 
     var body: some View {
@@ -56,7 +58,7 @@ struct ContentView: View {
     }
 
     private func startUp() async {
-        window.keyboard.start(rover: rover)
+        window.keyboard.start(rover: rover, follow: follow)
         window.gamepad.start(rover: rover)
         // Don't start with the host field focused, or it would swallow driving keys.
         try? await Task.sleep(for: .milliseconds(300))
@@ -68,7 +70,14 @@ struct ContentView: View {
             var t = Transaction()
             t.disablesAnimations = true
             withTransaction(t) {
-                if let tab = InspectorTab(rawValue: name) { window.open(tab) } else { window.showInspector = false }
+                if name == "following" {
+                    window.showInspector = false
+                    follow.start()
+                } else if let tab = InspectorTab(rawValue: name) {
+                    window.open(tab)
+                } else {
+                    window.showInspector = false
+                }
             }
         }
         while !Task.isCancelled {
@@ -91,6 +100,7 @@ struct VideoView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .overlay { Crosshair() }
+                    .overlay { DetectionOverlay() }
             } else {
                 ContentUnavailableView {
                     Label("No Video", systemImage: "video.slash")

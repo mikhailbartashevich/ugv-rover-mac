@@ -14,6 +14,10 @@ public final class MJPEGStream: NSObject {
     @ObservationIgnored private var session: URLSession?
     @ObservationIgnored private var task: URLSessionDataTask?
     @ObservationIgnored nonisolated(unsafe) private var buffer = Data()
+    /// When the last frame arrived and the frame itself, for consumers that poll
+    /// (not observed, so they don't trigger view updates on every frame).
+    @ObservationIgnored public private(set) var lastFrameAt: Date?
+    @ObservationIgnored public private(set) var latestCGImage: CGImage?
     @ObservationIgnored private var frameCount = 0
     @ObservationIgnored private var fpsWindowStart = Date()
 
@@ -51,6 +55,8 @@ public final class MJPEGStream: NSObject {
 
     private func didReceive(_ img: NSImage) {
         image = img
+        lastFrameAt = Date()
+        latestCGImage = img.cgImage(forProposedRect: nil, context: nil, hints: nil)
         // Count frames and publish the rate once a second, not on every frame.
         frameCount += 1
         let now = Date()

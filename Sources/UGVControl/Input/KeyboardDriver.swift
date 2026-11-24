@@ -8,6 +8,7 @@ final class KeyboardDriver {
     private var monitor: Any?
     private var held = Set<UInt16>()
     private weak var rover: RoverClient?
+    private weak var follow: FollowController?
 
     // macOS virtual key codes (layout-independent).
     private enum Key {
@@ -15,15 +16,16 @@ final class KeyboardDriver {
         static let up: UInt16 = 126, down: UInt16 = 125, left: UInt16 = 123, right: UInt16 = 124
         static let space: UInt16 = 49
         static let c: UInt16 = 8, l: UInt16 = 37, b: UInt16 = 11, g: UInt16 = 5
-        static let p: UInt16 = 35, r: UInt16 = 15, z: UInt16 = 6
+        static let p: UInt16 = 35, r: UInt16 = 15, z: UInt16 = 6, f: UInt16 = 3
         static let one: UInt16 = 18, two: UInt16 = 19, three: UInt16 = 20
         static let arrows: Set<UInt16> = [up, down, left, right]
         static let drive: Set<UInt16> = [w, a, s, d, up, down, left, right]
     }
 
-    func start(rover: RoverClient) {
+    func start(rover: RoverClient, follow: FollowController) {
         guard monitor == nil else { return }
         self.rover = rover
+        self.follow = follow
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] e in
             guard let self else { return e }
             if NSApp.keyWindow?.firstResponder is NSText { return e }   // typing in a field
@@ -66,7 +68,7 @@ final class KeyboardDriver {
             return true
         }
 
-        guard isDown else { return [Key.space, Key.c, Key.l, Key.b, Key.g, Key.p, Key.r, Key.z, Key.one, Key.two, Key.three].contains(k) }
+        guard isDown else { return [Key.space, Key.c, Key.l, Key.b, Key.g, Key.p, Key.r, Key.z, Key.f, Key.one, Key.two, Key.three].contains(k) }
         if e.isARepeat && k != Key.space { return true }
 
         switch k {
@@ -78,6 +80,7 @@ final class KeyboardDriver {
         case Key.p: rover.capturePhoto()
         case Key.r: rover.toggleRecording()
         case Key.z: rover.cycleZoom()
+        case Key.f: follow?.toggle()
         case Key.one: rover.setSpeedPreset(.slow)
         case Key.two: rover.setSpeedPreset(.middle)
         case Key.three: rover.setSpeedPreset(.fast)

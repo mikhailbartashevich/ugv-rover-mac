@@ -1,6 +1,7 @@
 # Mock of waveshareteam/ugv_rpi app.py (Flask-SocketIO) for developing the Mac app
 # without a rover. See Tools/mock-rover/README.md.
-import os, sys, json, time, random, threading, datetime
+import os, sys, json, time, random, threading, datetime, argparse
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flask import Flask, Response, request, jsonify, send_from_directory
 from flask_socketio import SocketIO
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -9,6 +10,14 @@ LOG = open(os.path.join(HERE, 'commands.log'), 'a', buffering=1)
 def log(*a): LOG.write(time.strftime('%H:%M:%S ') + ' '.join(str(x) for x in a) + '\n')
 # Camera frames: any JPEGs in data/frames/ (they cycle while the rover "drives").
 FRAMES = [open(os.path.join(HERE, 'frames', f), 'rb').read() for f in sorted(os.listdir(os.path.join(HERE, 'frames'))) if f.lower().endswith('.jpg')]
+ap = argparse.ArgumentParser()
+ap.add_argument('port', nargs='?', type=int, default=5055)
+ap.add_argument('--world', help='photo of a cat/dog/person: simulate a camera that turns and moves (needs Pillow)')
+args = ap.parse_args()
+SIM = None
+if args.world:
+    from sim import Sim
+    SIM = Sim(args.world)
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 st = dict(detect_type=10301, detect_react=10401, led_mode=0, base_light=0, lock=False, pan=0, tilt=0, frame=0)
@@ -21,12 +30,24 @@ def update():
 def index(): return '<html><script src="socket.io.js"></script>UGV Rover</html>'
 @app.route('/video_feed')
 def video_feed():
+    if SIM:
+        def sim_gen():
+            while True:
+                yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + SIM.frame() + b'\r\n'
+                time.sleep(1/15)
+        return Response(sim_gen(), mimetype='multipart/x-mixed-replace; boundary=frame')
     if not FRAMES: return 'Put JPEGs in Tools/mock-rover/data/frames/', 404
     def gen():
         while True:
             yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + FRAMES[st['frame'] % len(FRAMES)] + b'\r\n'
             time.sleep(1/20)
     return Response(gen(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/sim')
+def sim_state(): return jsonify(SIM.state() if SIM else {})
+@app.route('/sim/reset', methods=['POST'])
+def sim_reset():
+    if SIM: SIM.reset()
+    return jsonify(SIM.state() if SIM else {})
 @app.route('/send_command', methods=['POST'])
 def send_command():
     log('HTTP', request.form['command']); return jsonify(status='success')
@@ -47,6 +68,8 @@ def del_video():
 @socketio.on('json', namespace='/json')
 def on_json(data):
     log('JSON', json.dumps(data, separators=(',', ':')))
+    if SIM and data.get('T') == 13: SIM.command(data.get('X', 0), data.get('Z', 0))
+    if SIM and data.get('T') == 1: SIM.command((data.get('L', 0) + data.get('R', 0)) / 2, (data.get('R', 0) - data.get('L', 0)) / 0.2)
     if data.get('T') == 133: st['pan'], st['tilt'] = data.get('X', 0), data.get('Y', 0)
     if data.get('T') == 1 and (data.get('L') or data.get('R')): st['frame'] += 1
 @socketio.on('message', namespace='/ctrl')
@@ -67,4 +90,4 @@ def on_msg(message):
 def loop():
     while True: update(); time.sleep(2)
 threading.Thread(target=loop, daemon=True).start()
-socketio.run(app, host='127.0.0.1', port=int(sys.argv[1]) if len(sys.argv) > 1 else 5055, allow_unsafe_werkzeug=True)
+socketio.run(app, host='127.0.0.1', port=args.port, allow_unsafe_werkzeug=True)

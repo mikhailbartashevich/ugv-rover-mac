@@ -58,7 +58,7 @@ struct NetworkPanel: View {
                 Spacer()
                 Button { Task { await net.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
-                    .help("Refresh")
+                    .help("Re-check this Mac's network connections and internet access now (it also refreshes every 5 seconds).")
             }
         }
     }
@@ -78,6 +78,7 @@ struct NetworkPanel: View {
 
             HStack {
                 TextField("Home Wi‑Fi name", text: $st.homeSSID)
+                    .help("The name (SSID) of the Wi‑Fi the rover should join — usually your home network, or your phone's hotspot when you're out.")
                 if !net.preferredNetworks.isEmpty {
                     Menu {
                         ForEach(net.preferredNetworks, id: \.self) { n in
@@ -86,12 +87,14 @@ struct NetworkPanel: View {
                     } label: { Image(systemName: "list.bullet") }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .help("Networks this Mac knows")
+                    .help("Pick from the Wi‑Fi networks this Mac has joined before.")
                 }
             }
             SecureField("Home Wi‑Fi password", text: $st.homePass)
+                .help("That network's password. It's sent once to the rover to save the network there and is not stored on this Mac. Leave empty for an open network.")
             DisclosureGroup("Advanced") {
                 SecureField("Rover sudo password (if required)", text: $st.sudoPass)
+                    .help("Only if the rover asks for one: the password of the rover's Linux user, needed to change its network settings.")
                 Text("Only needed if the rover's user can't run sudo without a password.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -111,6 +114,7 @@ struct NetworkPanel: View {
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(prov.isRunning || st.homeSSID.isEmpty)
+            .help("With this Mac on the rover's AccessPopup Wi‑Fi: saves your network on the rover, lets it switch over, puts the Mac back on your Wi‑Fi and finds the rover's new address. Takes about a minute; the rover remembers the network from then on.")
 
             if !prov.steps.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -167,11 +171,13 @@ struct NetworkPanel: View {
                     }
                 }
                 .disabled(st.scanning)
+                .help("Look for a rover on every network this Mac is on, by checking each address for the rover's web app on port 5000. Takes a few seconds.")
                 if st.scanning { ProgressView().controlSize(.small) }
             }
             ForEach(st.found, id: \.self) { ip in
                 LabeledContent(ip) {
                     Button("Use") { rover.host = ip; Task { await rover.connect() } }
+                        .help("Connect to the rover at \(ip).")
                 }
             }
             if !st.scanning && st.found.isEmpty && st.didScan {
@@ -195,6 +201,7 @@ struct NetworkPanel: View {
             Button("Move Wi‑Fi to Last", systemImage: "arrow.down.to.line") {
                 Task { st.orderMessage = await net.demoteService("Wi-Fi") ?? "Done" }
             }
+            .help("Put Wi‑Fi last in macOS's network service order, so internet traffic prefers your cable or iPhone while Wi‑Fi stays connected to the rover. macOS asks for an administrator password. Undo in System Settings › Network › ⋯ › Set Service Order.")
             if let m = st.orderMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
         } header: {
             Label("Wi‑Fi to Rover, Internet via Cable", systemImage: "cable.connector")

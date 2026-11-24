@@ -6,6 +6,7 @@ import RoverKit
 struct RoverCommands: Commands {
     let rover: RoverClient
     let video: MJPEGStream
+    let follow: FollowController
 
     var body: some Commands {
         CommandMenu("Rover") {
@@ -20,6 +21,9 @@ struct RoverCommands: Commands {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             Button("Save Frame to Mac") { FrameSaver.save(from: video, rover: rover) }
                 .keyboardShortcut("s", modifiers: .command)
+
+            Button("Follow Target On / Off") { follow.toggle() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
 
             Divider()
 

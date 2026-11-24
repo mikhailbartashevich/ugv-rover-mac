@@ -57,14 +57,16 @@ struct ConsolePanel: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Insert a common command")
+                .help("Insert a common command: chassis feedback, IMU data, Wi‑Fi info, text on the rover's OLED screen, and more.")
 
                 TextField(#"base -c {"T":130}"#, text: $state.input)
                     .textFieldStyle(.roundedBorder)
                     .font(.callout.monospaced())
                     .onSubmit(send)
+                    .help("A command for the rover's host program. `base -c {…}` sends JSON straight to the ESP32 controller (see Waveshare's JSON command list). Press Return to send.")
 
                 Button("Send", action: send)
+                    .help("Send the command to the rover. The log shows whether the rover accepted it; replies appear on the rover's screen or log.")
                     .disabled(state.input.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(12)

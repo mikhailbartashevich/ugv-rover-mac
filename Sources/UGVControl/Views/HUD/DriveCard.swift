@@ -8,16 +8,16 @@ struct DriveCard: View {
     var body: some View {
         GlassEffectContainer(spacing: 6) {
             VStack(spacing: 6) {
-                pad("chevron.up", f: 1, t: 0, key: "W ↑", help: "Forward")
+                pad("chevron.up", f: 1, t: 0, key: "W ↑", help: "Drive forward")
                 HStack(spacing: 6) {
-                    pad("arrow.counterclockwise", f: 0, t: -1, key: "A ←", help: "Turn left")
+                    pad("arrow.counterclockwise", f: 0, t: -1, key: "A ←", help: "Spin left on the spot")
                     Image(systemName: "car.side")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .frame(width: 56, height: 56)
-                    pad("arrow.clockwise", f: 0, t: 1, key: "D →", help: "Turn right")
+                    pad("arrow.clockwise", f: 0, t: 1, key: "D →", help: "Spin right on the spot")
                 }
-                pad("chevron.down", f: -1, t: 0, key: "S ↓", help: "Backward")
+                pad("chevron.down", f: -1, t: 0, key: "S ↓", help: "Drive backward")
             }
         }
     }
@@ -38,7 +38,7 @@ struct DriveCard: View {
                 .onChanged { _ in rover.setDrive(forward: f, turn: t) }
                 .onEnded { _ in rover.setDrive(forward: 0, turn: 0) }
         )
-        .help("\(help) — hold")
+        .help("\(help) while you hold this (or the key shown); release to stop. Hold two keys, e.g. W + A, to drive in an arc. Speed follows the Slow / Middle / Fast setting.")
         .accessibilityLabel(help)
         .accessibilityAddTraits(.isButton)
     }

@@ -17,11 +17,12 @@ struct MediaPanel: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .help("Switch between photos and videos stored on the rover.")
                 Button { Task { await refresh() } } label: {
                     if library.isLoading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
                 }
                 .buttonStyle(.borderless)
-                .help("Refresh")
+                .help("Reload the list of photos and videos from the rover.")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
@@ -55,7 +56,7 @@ struct MediaPanel: View {
                             PhotoThumb(url: library.url(name, kind: .photos, base: base))
                                 .onTapGesture { state.preview = MediaItem(name: name, kind: .photos) }
                                 .contextMenu { menu(name, .photos) }
-                                .help(name)
+                                .help("\(name) — click to view large; right-click to open, download or delete.")
                         }
                     }
                     .padding(16)
@@ -161,9 +162,9 @@ private struct VideoRow: View {
             Text(name).lineLimit(1).truncationMode(.middle)
             Spacer()
             Button { action(.open) } label: { Image(systemName: "play.fill") }
-                .help("Download and play")
+                .help("Download the video to Downloads › UGV Rover and open it in your default player.")
             Button { action(.download) } label: { Image(systemName: "arrow.down.circle") }
-                .help("Download to Mac")
+                .help("Download the video to Downloads › UGV Rover on this Mac and show it in Finder.")
         }
         .buttonStyle(.borderless)
         .padding(.vertical, 8)
@@ -193,9 +194,13 @@ private struct PhotoPreview: View {
                 Text(name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button("Delete…", role: .destructive) { onAction(.delete, name, kind); dismiss() }
+                    .help("Delete this photo from the rover. This can't be undone.")
                 Button("Download") { onAction(.download, name, kind) }
+                    .help("Save the full-size photo to Downloads › UGV Rover and show it in Finder.")
                 Button("Open in Preview") { onAction(.open, name, kind) }
+                    .help("Download the photo and open it in Preview.")
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    .help("Close the preview (Return).")
             }
             .padding(14)
         }

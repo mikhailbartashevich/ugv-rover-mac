@@ -62,9 +62,13 @@ public final class RoverClient {
     public var reaction: DetectionReaction { reported("reaction", telemetry.reaction) ?? .none }
     public var headLight: HeadLight { reported("head", telemetry.headLight) ?? .off }
     public var chassisLightOn: Bool { reported("chassis", telemetry.chassisLightOn) ?? false }
-    public var movementLocked: Bool { reported("lock", telemetry.movementLocked) ?? false }
+    // The rover starts with movement locked.
+    public var movementLocked: Bool { reported("lock", telemetry.movementLocked) ?? true }
 
     public private(set) var toast: Toast?
+
+    /// Called when the user drives or stops by hand (autopilot uses it to step aside).
+    @ObservationIgnored public var onManualOverride: (() -> Void)?
 
     public init() {
         host = UserDefaults.standard.string(forKey: "roverHost") ?? "192.168.50.5"
@@ -146,6 +150,7 @@ public final class RoverClient {
     /// Digital driving (keyboard / on-screen pad): forward −1…1, turn −1…1.
     public func setDrive(forward f: Int, turn t: Int) {
         guard f != forward || t != turn else { return }
+        if f != 0 || t != 0 { onManualOverride?() }
         forward = f
         turn = t
         if f == 0 && t == 0 {
@@ -163,11 +168,13 @@ public final class RoverClient {
             if analogActive { analogActive = false; send(.stop) }
             return
         }
+        if !analogActive { onManualOverride?() }
         analogActive = true
         send(.velocity(linear: linear * maxSpeed, angular: angular * 2.5 * speedRate))
     }
 
     public func emergencyStop() {
+        onManualOverride?()
         forward = 0
         turn = 0
         analogActive = false

@@ -26,18 +26,18 @@ struct GimbalCard: View {
 
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
-                    aim("arrow.left", "Pan left (⇧←)") { rover.nudgeGimbal(dx: -10, dy: 0) }
-                    aim("arrow.up", "Tilt up (⇧↑)") { rover.nudgeGimbal(dx: 0, dy: 10) }
-                    aim("arrow.down", "Tilt down (⇧↓)") { rover.nudgeGimbal(dx: 0, dy: -10) }
-                    aim("arrow.right", "Pan right (⇧→)") { rover.nudgeGimbal(dx: 10, dy: 0) }
+                    aim("arrow.left", "Turn the camera 10° left. Keyboard: ⇧← (5° steps).") { rover.nudgeGimbal(dx: -10, dy: 0) }
+                    aim("arrow.up", "Tilt the camera 10° up (up to 90°). Keyboard: ⇧↑.") { rover.nudgeGimbal(dx: 0, dy: 10) }
+                    aim("arrow.down", "Tilt the camera 10° down (down to −30°). Keyboard: ⇧↓.") { rover.nudgeGimbal(dx: 0, dy: -10) }
+                    aim("arrow.right", "Turn the camera 10° right. Keyboard: ⇧→.") { rover.nudgeGimbal(dx: 10, dy: 0) }
                     Spacer(minLength: 4)
-                    aim("scope", "Look ahead (C)") { rover.lookAhead() }
+                    aim("scope", "Look ahead: point the camera straight forward and level, so the view matches the driving direction (C).") { rover.lookAhead() }
                     Button { rover.setSteady(!rover.steady) } label: {
                         Image(systemName: "gyroscope").frame(width: 22, height: 22)
                     }
                     .buttonStyle(.glass)
                     .tint(rover.steady ? .accentColor : nil)
-                    .help(rover.steady ? "Stabilisation on (G)" : "Stabilisation off (G)")
+                    .help(rover.steady ? "Stabilisation is ON: the gimbal uses the rover's IMU to hold the camera's tilt steady over bumps; pan stays straight ahead. Click or press G to turn it off." : "Stabilisation is off. Turn it on to have the gimbal hold the camera's tilt steady with the IMU while driving over bumps (G).")
                     LightsMenu()
                 }
             }
@@ -74,6 +74,6 @@ private struct LightsMenu: View {
         .buttonStyle(.glass)
         .tint(rover.headLight == .off ? nil : .yellow)
         .fixedSize()
-        .help("Lights (L toggles the head light, B the chassis lights)")
+        .help("Lights. Head light: Off, Auto (switches on when a vision mode spots something) or On. Chassis lights: on/off. Keys: L toggles the head light, B the chassis lights.")
     }
 }

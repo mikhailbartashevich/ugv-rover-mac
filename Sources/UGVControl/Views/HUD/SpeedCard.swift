@@ -22,9 +22,9 @@ struct SpeedCard: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help("Slow / Middle / Fast (1 / 2 / 3)")
+                .help("Speed presets, as in the rover's web UI: Slow 30 %, Middle 66 %, Fast 100 % of the 1.3 m/s top speed. Keys 1 / 2 / 3.")
                 Slider(value: $rover.speedRate, in: 0.1...1.0)
-                    .help("Fine speed")
+                    .help("Fine-tune the top driving speed from 10 % to 100 %. Applies to the keyboard, the on-screen pad and a game controller (not to Follow, which has its own limit).")
             }
             .frame(width: 230)
             .hudCard()
@@ -39,7 +39,7 @@ struct SpeedCard: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
             .tint(.red)
-            .help("Emergency stop (Space, ⌘.)")
+            .help("Emergency stop: brakes the wheels at once, ends Follow, and repeats the stop over HTTP in case the live channel is down. Keys: Space or ⌘.")
         }
     }
 }

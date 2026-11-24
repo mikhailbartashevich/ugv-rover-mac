@@ -25,6 +25,7 @@ From the stock web UI:
 - Photo and video gallery, plus a command console
 
 New in this app:
+- **Follow** a cat, dog or person on its own (see below)
 - One-button Wi‑Fi setup (see below)
 - Game controller support (Xbox, PlayStation, MFi)
 - Save the current frame to your Mac (⌘S), and download media from the rover
@@ -39,6 +40,15 @@ New in this app:
 
 When no known network is in range, the rover falls back to the AccessPopup hotspot. If the rover's user needs a password for `sudo`, enter it under **Advanced**.
 
+## Follow the cat
+
+Press **F**, the paw button, or *Follow* in the inspector. The rover keeps the target centred and creeps closer at up to 0.12 m/s. It stops once the target fills the chosen share of the frame, and it never reverses.
+- **Lost target:** it turns slowly towards where it last saw the target for up to 12 s, then waits.
+- **Stopping:** any manual drive key, Space or STOP ends Follow.
+
+- **Detection** runs on the Mac with Apple's Vision framework, about 8 times a second. On the rover's small, blurry frames the animal detector often misses, so the app falls back to the scene classifier ("there's a cat") combined with salient-object boxes.
+- **Claude** (optional; needs an Anthropic API key, stored in the Keychain) gets one frame every few seconds through the Messages API (`claude-opus-5-5`, low effort, structured JSON output). It reports obstacles in the path, which block forward driving for 4 s, and where the target went, including a bounding box when the Mac's detector misses it.
+
 ## Controls
 
 | Keys | Action |
@@ -49,6 +59,7 @@ When no known network is in range, the rover falls back to the AccessPopup hotsp
 | C / G | look ahead / camera stabilisation |
 | 1 2 3 | Slow / Middle / Fast |
 | P / R / Z | photo / record / zoom on the rover |
+| F | follow the cat on / off |
 | L / B | head / chassis lights |
 | ⌘S | save frame to Mac |
 
@@ -65,6 +76,7 @@ Sources/
     Media/                     photos & videos on the rover
     Network/                   Mac network status, rover scanner
     Provisioning/              Wi‑Fi setup through JupyterLab
+    Autonomy/                  target detection, follow planner/controller, Claude vision
   UGVControl/                  SwiftUI app
     App/  Input/  Services/
     Views/{Toolbar,HUD,Inspector,Components}
@@ -87,9 +99,12 @@ Tools/                         icon renderer, mock rover
 
 ```bash
 swift build
-swift test                                        # unit tests
+Tools/test.sh                                     # unit tests (works around a SwiftPM cache bug)
 # against the mock rover (Tools/mock-rover/README.md):
-UGV_TEST_ROVER=127.0.0.1:5055 UGV_TEST_ROVER_LOG=$PWD/Tools/mock-rover/data/commands.log swift test
+UGV_TEST_ROVER=127.0.0.1:5055 UGV_TEST_ROVER_LOG=$PWD/Tools/mock-rover/data/commands.log Tools/test.sh
+# closed-loop Follow test: the mock simulates a camera that turns and moves
+python Tools/mock-rover/mock_rover.py 5056 --world cat.jpg   # needs Pillow
+UGV_TEST_SIM=127.0.0.1:5056 Tools/test.sh --filter Follow
 # layout snapshots without touching the screen:
 UGV_SNAPSHOT=/tmp/shot UGV_SNAPSHOT_TABS=hud,modes,media,network,console UGV_SNAPSHOT_QUIT=1 \
   UGVControl.app/Contents/MacOS/UGVControl

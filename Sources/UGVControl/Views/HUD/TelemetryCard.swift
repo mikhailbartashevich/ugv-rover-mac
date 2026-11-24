@@ -42,7 +42,7 @@ struct TelemetryCard: View {
         .frame(width: 236)
         .opacity(live ? 1 : 0.55)
         .hudCard()
-        .help(live ? "Live data from the rover" : "Waiting for data from the rover")
+        .help(live ? "Live data from the rover, refreshed every few seconds. Battery % is estimated from the 3-cell pack voltage (≈9.6 V empty … 12.6 V full); charge below 10 V. FPS is the rover's camera rate, Media is the space used by photos and videos on the rover." : "Waiting for data from the rover — it arrives over the live control channel once connected.")
     }
 
     private func fps(_ t: Telemetry) -> String? {
