@@ -31,22 +31,19 @@ struct TelemetryCard: View {
                 }
             }
 
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-                GridRow {
-                    Metric(symbol: "cpu", title: "CPU", value: t.cpu.map { "\(Int($0))%" })
-                    Metric(symbol: "memorychip", title: "RAM", value: t.ram.map { "\(Int($0))%" })
-                }
-                GridRow {
-                    Metric(symbol: "thermometer.medium", title: "Temp", value: t.temp.map { String(format: "%.0f°C", $0) })
-                    Metric(symbol: "wifi", title: "Signal", value: t.rssi.map { "\(Int($0)) dBm" })
-                }
-                GridRow {
-                    Metric(symbol: "film", title: "FPS", value: fps(t))
-                    Metric(symbol: "internaldrive", title: "Media", value: storage(t))
-                }
+            // Icon | label | value, twice per row, so every column lines up.
+            Grid(alignment: .leading, horizontalSpacing: 5, verticalSpacing: 6) {
+                metricRow(Metric(symbol: "cpu", title: "CPU", value: t.cpu.map { "\(Int($0))%" }),
+                          Metric(symbol: "memorychip", title: "RAM", value: t.ram.map { "\(Int($0))%" }))
+                metricRow(Metric(symbol: "thermometer.medium", title: "Temp", value: t.temp.map { String(format: "%.0f°C", $0) }),
+                          Metric(symbol: "wifi", title: "Signal", value: t.rssi.map { "\(Int($0)) dBm" }))
+                metricRow(Metric(symbol: "film", title: "FPS", value: fps(t)),
+                          Metric(symbol: "internaldrive", title: "Media", value: storage(t)))
             }
+            .font(.caption)
+            .lineLimit(1)
         }
-        .frame(width: 236)
+        .frame(width: 244, alignment: .leading)
         .opacity(live ? 1 : 0.55)
         .hudCard()
         .help(live ? "Live data from the rover, refreshed every few seconds. Battery % is estimated from the 3-cell pack voltage (≈9.6 V empty … 12.6 V full); charge below 10 V. FPS is the rover's camera rate, Media is the space used by photos and videos on the rover." : "Waiting for data from the rover — it arrives over the live control channel once connected.")
@@ -63,18 +60,27 @@ struct TelemetryCard: View {
     }
 }
 
-private struct Metric: View {
+private struct Metric {
     let symbol: String
     let title: String
     let value: String?
+}
 
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).frame(width: 14).foregroundStyle(.secondary)
-            Text(title).foregroundStyle(.secondary)
-            Text(value ?? "—").monospacedDigit()
+private extension TelemetryCard {
+    func metricRow(_ a: Metric, _ b: Metric) -> some View {
+        GridRow {
+            cells(a)
+            Color.clear.frame(width: 8, height: 1)          // gap between the two groups
+            cells(b)
         }
-        .font(.caption)
-        .lineLimit(1)
+    }
+
+    @ViewBuilder func cells(_ m: Metric) -> some View {
+        Image(systemName: m.symbol)
+            .foregroundStyle(.secondary)
+            .frame(width: 16)
+            .gridColumnAlignment(.center)
+        Text(m.title).foregroundStyle(.secondary)
+        Text(m.value ?? "—").monospacedDigit()
     }
 }
