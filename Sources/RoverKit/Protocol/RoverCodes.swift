@@ -95,12 +95,6 @@ public enum CameraZoom: Int, CaseIterable, Identifiable, Sendable {
     public var next: CameraZoom { switch self { case .x1: .x2; case .x2: .x4; case .x4: .x1 } }
 }
 
-public enum StreamResolution: Int, CaseIterable, Identifiable, Sendable {
-    case high = 10101, medium = 10102, low = 10103
-    public var id: Int { rawValue }
-    public var title: String { switch self { case .high: "High"; case .medium: "Medium"; case .low: "Low" } }
-}
-
 /// Speed presets, matching the web UI's Slow / Middle / Fast (min/mid/max_rate).
 public enum SpeedPreset: String, CaseIterable, Identifiable, Sendable {
     case slow, middle, fast

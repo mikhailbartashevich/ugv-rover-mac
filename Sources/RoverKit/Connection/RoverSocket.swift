@@ -13,6 +13,8 @@ public final class RoverSocket {
     public private(set) var telemetry = Telemetry()
     public private(set) var lastUpdate: Date?
     public private(set) var jsonReady = false
+    /// Voltage history for the charging guess.
+    public private(set) var battery = BatteryTrend()
 
     @ObservationIgnored private var task: URLSessionWebSocketTask?
     @ObservationIgnored private let session = URLSession(configuration: .ephemeral)
@@ -29,6 +31,7 @@ public final class RoverSocket {
         disconnect()
         baseURL = base
         telemetry = Telemetry()
+        battery = BatteryTrend()
         lastUpdate = nil
         open()
     }
@@ -131,7 +134,11 @@ public final class RoverSocket {
         if let v = (dict["112"] as? NSNumber)?.doubleValue, v == 0 { return }
         telemetry.apply(dict)
         lastUpdate = Date()
+        if let v = telemetry.voltage { battery.add(v) }
     }
+
+    /// The wheels are being driven (resets the charging guess).
+    public func noteLoad() { battery.noteLoad() }
 
     private func sendRaw(_ s: String) {
         task?.send(.string(s)) { _ in }

@@ -128,6 +128,7 @@ public final class ClaudeVision {
         """
         You are the eyes of a small wheeled ground rover (camera about 20 cm above the floor) that is slowly \
         following a \(target.rawValue) around a home. You receive one frame from its forward-facing camera.
+        The \(target.rawValue) may be far away (5–10 m) and only a few dozen pixels tall — look carefully across the whole frame.
         Report whether the \(target.rawValue) is visible and where: which third of the frame its centre is in, \
         and its bounding box as fractions of the frame (x, y = top-left corner; width, height), or null if not visible.
         Report whether something blocks driving straight ahead within about half a metre — furniture legs, walls, \

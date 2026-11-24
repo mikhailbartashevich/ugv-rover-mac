@@ -49,7 +49,11 @@ public final class RoverClient {
     public private(set) var tilt: Double = 0
     public private(set) var steady = false
     public private(set) var zoom: CameraZoom = .x1
-    public private(set) var resolution: StreamResolution?
+    /// JPEG quality of the video stream, 1–100. The rover starts at 20, which smears
+    /// distant detail into blocks; this is re-applied on every connect.
+    public var videoQuality: Int = UserDefaults.standard.object(forKey: "videoQuality") as? Int ?? 70 {
+        didSet { UserDefaults.standard.set(videoQuality, forKey: "videoQuality") }
+    }
     public private(set) var recordingSince: Date?
     public var isRecording: Bool { recordingSince != nil }
 
@@ -94,6 +98,7 @@ public final class RoverClient {
         await ping()
         if reachable == true, let base = baseURL {
             socket.connect(to: base)
+            await applyVideoQuality()
         } else {
             socket.disconnect()
         }
@@ -150,6 +155,7 @@ public final class RoverClient {
     /// Sends an ESP32 command over Socket.IO, or over HTTP if the socket is down.
     public func send(_ command: ESP32Command) {
         lastSent = command.json
+        if command.isMotion { socket.noteLoad() }
         if socket.emit(command) { return }
         guard !httpInFlight else { return }
         httpInFlight = true
@@ -306,9 +312,9 @@ public final class RoverClient {
 
     public func cycleZoom() { setZoom(zoom.next) }
 
-    public func setResolution(_ r: StreamResolution) {
-        guard ctrl(r.rawValue) else { return }
-        resolution = r
+    /// Sends the stream quality to the rover (`video -q N` on its command line).
+    public func applyVideoQuality() async {
+        await sendCommandLine("video -q \(videoQuality.clamped(to: 1...100))")
     }
 
     public func capturePhoto() {

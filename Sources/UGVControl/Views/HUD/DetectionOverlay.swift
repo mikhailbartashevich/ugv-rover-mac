@@ -10,7 +10,11 @@ struct DetectionOverlay: View {
             if follow.isActive, let d = follow.detection {
                 let r = CGRect(x: d.box.minX * geo.size.width, y: d.box.minY * geo.size.height,
                                width: d.box.width * geo.size.width, height: d.box.height * geo.size.height)
-                let color: Color = d.source == .claude ? .purple : .green
+                let color: Color = switch d.source {
+                case .claude: .purple
+                case .tracker: .yellow
+                default: .green
+                }
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(color, lineWidth: 3)

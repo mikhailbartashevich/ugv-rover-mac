@@ -20,6 +20,18 @@ public struct ESP32Command: Sendable, Equatable {
         a.json == b.json
     }
 
+    /// A wheel command that actually moves (T:1 / T:11 / T:13 with a non-zero value).
+    public var isMotion: Bool {
+        guard [1, 11, 13].contains(type) else { return false }
+        return fields.contains { _, v in
+            switch v {
+            case .int(let i): i != 0
+            case .double(let d): abs(d) > 0.001
+            case .string: false
+            }
+        }
+    }
+
     /// Compact JSON with "T" first and short decimals.
     public var json: String {
         let parts = [("T", Value.int(type))] + fields

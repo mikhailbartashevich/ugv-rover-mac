@@ -63,3 +63,21 @@ struct ProvisionScriptTests {
         #expect(ProvisionScript.value(after: ProvisionScript.failMarker, in: out) == "sudo")
     }
 }
+
+@Suite("Camera setup script")
+struct CameraSetupScriptTests {
+    @Test func editsBothResolutionLinesAndRestarts() {
+        let s = CameraSetup.script(CameraResolution(width: 1280, height: 960))
+        #expect(s.contains("default_res_w:).*/\\1 1280"))
+        #expect(s.contains("default_res_h:).*/\\1 960"))
+        #expect(s.contains("config.yaml.bak-ugvcontrol"))
+        #expect(s.contains("setsid nohup"))
+        #expect(s.contains(ProvisionScript.okMarker) && s.contains(ProvisionScript.failMarker))
+    }
+
+    @Test func onlyWheelCommandsCountAsMotion() {
+        #expect(ESP32Command.wheels(left: 0.1, right: 0).isMotion)
+        #expect(!ESP32Command.stop.isMotion)
+        #expect(!ESP32Command.gimbal(pan: 10, tilt: 0).isMotion)
+    }
+}

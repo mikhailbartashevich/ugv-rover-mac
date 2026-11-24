@@ -21,7 +21,14 @@ struct TelemetryCard: View {
                         .foregroundStyle(t.batteryLow ? Color.red : Color.secondary)
                 }
                 Spacer(minLength: 0)
-                if t.batteryLow { Badge(text: "LOW", color: .red) }
+                if rover.socket.battery.isCharging {
+                    Label("Charging", systemImage: "bolt.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.green)
+                        .help("The battery voltage has been rising steadily while the rover stands still, so it's most likely on the charger. The rover doesn't report its charger directly; this takes a minute or two to show after connecting or driving.")
+                } else if t.batteryLow {
+                    Badge(text: "LOW", color: .red)
+                }
             }
 
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {

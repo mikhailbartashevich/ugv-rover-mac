@@ -29,7 +29,7 @@ New in this app:
 - One-button Wi‑Fi setup (see below)
 - Game controller support (Xbox, PlayStation, MFi)
 - Save the current frame to your Mac (⌘S), and download media from the rover
-- Low-battery warning, connection status, auto-reconnect, and **auto-discovery**: if the saved address doesn't answer, the app tries the rover's `.local` name, its hotspot (192.168.50.5) and every address on the Mac's networks
+- Low-battery warning, charging indicator, connection status, auto-reconnect, and **auto-discovery**: if the saved address doesn't answer, the app tries the rover's `.local` name, its hotspot (192.168.50.5) and every address on the Mac's networks
 - Full keyboard control and a Rover menu
 
 ## First-time setup — keep your internet
@@ -46,8 +46,22 @@ Press **F**, the paw button, or *Follow* in the inspector. The rover keeps the t
 - **Lost target:** it turns slowly towards where it last saw the target for up to 12 s, then waits.
 - **Stopping:** any manual drive key, Space or STOP ends Follow.
 
-- **Detection** runs on the Mac with Apple's Vision framework, about 8 times a second. On the rover's small, blurry frames the animal detector often misses, so the app falls back to the scene classifier ("there's a cat") combined with salient-object boxes.
+- **Detection** runs on the Mac with Apple's Vision framework, about 8 times a second. Each frame is searched in steps: a zoomed-in region around where the target was last seen, then the whole frame, then overlapping tiles (3 × 2, then 5 × 4). The tiles act as a digital zoom for far-away targets. On the rover's small, blurry frames the animal detector often misses, so the app falls back to the scene classifier ("there's a cat") combined with salient-object boxes.
 - **Claude** (optional) looks at one frame every few seconds. It reports obstacles in the path, which block forward driving for 4 s, and where the target went, including a bounding box when the Mac's detector misses it. By default it runs through the **Claude Code installed on this Mac** (`claude -p` with the image over `--input-format stream-json`, `--json-schema`, tools off), using the account Claude Code is signed in with, so no API key is needed. Alternatively it can call the Messages API with an API key stored in the Keychain. Model: `claude-opus-5-5`, low effort.
+
+### Range
+
+On-device recognition needs the target to be roughly 50 px tall in the video, and image quality matters as much as size:
+
+- **Video quality**: the rover streams at JPEG quality 20 by default, which smears distant detail into blocks. The app sets 70 on every connect (Modes › Camera › Video quality).
+- **Camera resolution**: Modes › Camera › Camera resolution › Apply changes `default_res_w/h` in the rover's `config.yaml` through JupyterLab and restarts its program. The original is kept as `config.yaml.bak-ugvcontrol`. At 1280 × 960 a cat stays recognisable about twice as far away as at 640 × 480, at the cost of more Raspberry Pi CPU.
+- **Claude as a spotter**: when the Mac sees nothing, Claude gets the full-size frame and finds targets far smaller than Vision can. Vision's object tracker then holds on to the target. The tracker can follow on its own for up to 10 s; after that the detector or Claude must confirm the target again.
+
+In the simulator, a cat 10 % of the frame tall is found on-device. One about 6 % tall is found only with Claude's help.
+
+## Battery
+
+The rover reports only its battery voltage, so the app infers charging. If the voltage rises steadily (more than 0.006 V/min over a few minutes) while the wheels are still, the card shows **⚡ Charging**. Driving resets the estimate.
 
 ## Controls
 

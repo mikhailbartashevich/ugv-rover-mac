@@ -101,3 +101,82 @@ struct FollowSimTests {
         #expect(z1 > 1.1, "drove closer")
     }
 }
+
+@Suite("Battery trend")
+struct BatteryTrendTests {
+    let t0 = Date(timeIntervalSince1970: 0)
+
+    @Test func risingVoltageWhileStillIsCharging() {
+        var b = BatteryTrend()
+        for i in 0..<30 { b.add(11.00 + Double(i) * 0.0025 + (i % 2 == 0 ? 0.01 : -0.01), at: t0 + Double(i) * 5) }
+        #expect(b.isCharging)          // +0.03 V/min
+    }
+
+    @Test func flatNoisyVoltageIsNot() {
+        var b = BatteryTrend()
+        for i in 0..<30 { b.add(11.05 + (i % 3 == 0 ? 0.02 : -0.01), at: t0 + Double(i) * 5) }
+        #expect(!b.isCharging)
+    }
+
+    @Test func needsEnoughHistoryAndResetsOnDriving() {
+        var b = BatteryTrend()
+        for i in 0..<10 { b.add(11.0 + Double(i) * 0.05, at: t0 + Double(i) * 5) }
+        #expect(!b.isCharging, "only 45 s of data")
+        for i in 10..<30 { b.add(11.0 + Double(i) * 0.05, at: t0 + Double(i) * 5) }
+        #expect(b.isCharging)
+        b.noteLoad()
+        #expect(!b.isCharging)
+    }
+}
+
+/// Far-away target: the cat is a few dozen pixels tall at the start.
+///   python Tools/mock-rover/mock_rover.py 5058 --world <cat photo> --target-scale 0.18
+///   UGV_TEST_FAR_SIM=127.0.0.1:5058 Tools/test.sh --filter Far
+@Suite("Far target in simulator", .enabled(if: ProcessInfo.processInfo.environment["UGV_TEST_FAR_SIM"] != nil))
+@MainActor
+struct FarTargetTests {
+    let host = ProcessInfo.processInfo.environment["UGV_TEST_FAR_SIM"] ?? ""
+
+    @Test func spotsASmallDistantCatAndClosesIn() async throws {
+        let rover = RoverClient()
+        rover.host = host
+        let video = MJPEGStream()
+        await rover.connect()
+        var reset = URLRequest(url: URL(string: "http://\(host)/sim/reset")!)
+        reset.httpMethod = "POST"
+        _ = try await URLSession.shared.data(for: reset)
+        video.start(url: rover.videoURL!)
+        let follow = FollowController(rover: rover, video: video, claude: ClaudeVision(apiKey: { nil }))
+        follow.settings.maxSpeed = 0.25
+        if ProcessInfo.processInfo.environment["UGV_TEST_FAR_CLAUDE"] != nil {
+            // Uses the local Claude Code to spot what the Mac can't.
+            follow.claudeEnabled = true
+            follow.claude.backend = .claudeCode
+        }
+
+        let end = Date().addingTimeInterval(75)
+        while Date() < end, !(rover.socket.canSendJSON && video.lastFrameAt != nil) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        follow.start()
+        var sources = Set<String>()
+        var firstHeight: CGFloat?
+        var maxHeight: CGFloat = 0
+        while Date() < end {
+            try await Task.sleep(for: .milliseconds(250))
+            if let d = follow.detection {
+                sources.insert(d.source.rawValue)
+                if firstHeight == nil { firstHeight = d.box.height }
+                maxHeight = max(maxHeight, d.box.height)
+            }
+            if maxHeight > 0.35 { break }
+        }
+        follow.stop()
+        video.stop()
+        rover.socket.disconnect()
+        print("far: sources \(sources.sorted()), first seen at \(Int((firstHeight ?? 0) * 100))% of frame height, reached \(Int(maxHeight * 100))%")
+        #expect(firstHeight != nil, "the distant cat was found")
+        #expect((firstHeight ?? 1) < 0.2, "it really was small when first found")
+        #expect(maxHeight > (firstHeight ?? 1) * 1.5, "and the rover drove towards it")
+    }
+}

@@ -84,7 +84,11 @@ struct FollowPanel: View {
         guard follow.isActive else { return "Press F or the paw button to start." }
         if let d = follow.detection {
             let pos = d.box.midX < 0.4 ? "left" : (d.box.midX > 0.6 ? "right" : "centre")
-            let src = d.source == .claude ? " (seen by Claude)" : ""
+            let src = switch d.source {
+            case .claude: " (seen by Claude)"
+            case .tracker: " (tracking)"
+            default: ""
+            }
             return "\(follow.target.title) \(pos), \(Int(d.box.height * 100))% of frame\(src) · \(String(format: "%.2f m/s", follow.command.linear))"
         }
         return follow.phase == .noVideo ? "Waiting for the camera feed." : "No \(follow.target.rawValue) in view."

@@ -13,12 +13,15 @@ FRAMES = [open(os.path.join(HERE, 'frames', f), 'rb').read() for f in sorted(os.
 ap = argparse.ArgumentParser()
 ap.add_argument('port', nargs='?', type=int, default=5055)
 ap.add_argument('--host', default='127.0.0.1', help='address to listen on')
+ap.add_argument('--target-scale', type=float, default=1.0, help='with --world: shrink the target so it looks far away (e.g. 0.15)')
+ap.add_argument('--charging', action='store_true', help='battery voltage rises over time, as on the charger')
 ap.add_argument('--world', help='photo of a cat/dog/person: simulate a camera that turns and moves (needs Pillow)')
 args = ap.parse_args()
 SIM = None
 if args.world:
     from sim import Sim
-    SIM = Sim(args.world)
+    SIM = Sim(args.world, target_scale=args.target_scale)
+STARTED = time.time()
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 st = dict(detect_type=10301, detect_react=10401, led_mode=0, base_light=0, lock=False, pan=0, tilt=0, frame=0)
@@ -26,7 +29,7 @@ CTRL = {10301,10302,10303,10304,10305,10306,10307,10308,10309}
 def update():
     socketio.emit('update', {'104': 1.2, '105': 4.5, '106': random.randint(8, 35), '107': 48.0 + random.random()*4,
         '108': 31, '111': -52 + random.randint(-3, 3), '102': st['led_mode'], '101': st['detect_type'], '103': st['detect_react'],
-        '109': st['pan'], '110': st['tilt'], '112': 1105 + random.randint(-5, 5), '113': 24.6, '114': st['lock'], '115': st['base_light']}, namespace='/ctrl')
+        '109': st['pan'], '110': st['tilt'], '112': (int(1050 + (time.time() - STARTED) * 0.08) if args.charging else 1105) + random.randint(-2, 2), '113': 24.6, '114': st['lock'], '115': st['base_light']}, namespace='/ctrl')
 @app.route('/')
 def index(): return '<html><script src="socket.io.js"></script>UGV Rover</html>'
 @app.route('/video_feed')

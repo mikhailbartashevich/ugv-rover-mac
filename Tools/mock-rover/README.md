@@ -9,6 +9,8 @@ python3 -m venv .venv && .venv/bin/pip install -r Tools/mock-rover/requirements.
 .venv/bin/python Tools/mock-rover/mock_rover.py 5055
 ```
 
+Options: `--world cat.jpg` simulates a camera that turns and moves (needs Pillow), `--target-scale 0.15` makes that target look far away, `--charging` makes the battery voltage rise, and `--host` sets the listen address.
+
 Add some JPEGs to `Tools/mock-rover/data/frames/` for a camera feed. In the app, set the rover
 address to `127.0.0.1:5055`. To run the integration tests against the mock:
 

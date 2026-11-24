@@ -11,6 +11,7 @@ struct UGVControlApp: App {
     private let video: MJPEGStream
     private let media = MediaLibrary()
     private let provisioner = RoverProvisioner()
+    private let cameraSetup = CameraSetup()
     private let follow: FollowController
 
     init() {
@@ -32,6 +33,7 @@ struct UGVControlApp: App {
                 .environment(media)
                 .environment(provisioner)
                 .environment(follow)
+                .environment(cameraSetup)
                 .frame(minWidth: 920, minHeight: 620)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
         }

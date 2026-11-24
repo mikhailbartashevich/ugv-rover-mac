@@ -62,6 +62,15 @@ final class JupyterTerminal {
         throw ProvisionError("The rover didn't answer in time.")
     }
 
+    /// Types a bash script into the terminal (see ProvisionScript.terminalLines) and waits
+    /// for it to print the OK or FAIL marker. Returns the terminal output.
+    func runScript(_ script: String, timeout: TimeInterval) async throws -> String {
+        for line in ProvisionScript.terminalLines(for: script) {
+            try await send(line)
+        }
+        return try await waitFor([ProvisionScript.okMarker, ProvisionScript.failMarker], timeout: timeout)
+    }
+
     func close() async {
         ws?.cancel(with: .normalClosure, reason: nil)
         if let n = name {

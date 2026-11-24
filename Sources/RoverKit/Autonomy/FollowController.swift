@@ -53,6 +53,11 @@ public final class FollowController {
     @ObservationIgnored private var lastClaudeAt: Date?
     @ObservationIgnored private var blockedUntil: Date?
     @ObservationIgnored private var movingSent = false
+    @ObservationIgnored private let tracker = ObjectTracker()
+    /// Last time the detector or Claude (not just the tracker) saw the target.
+    @ObservationIgnored private var lastConfirmed: Date?
+    /// How long the tracker may follow on its own before it must be confirmed.
+    static let trackerOnlyLimit: TimeInterval = 10
 
     public init(rover: RoverClient, video: MJPEGStream, claude: ClaudeVision) {
         self.rover = rover
@@ -67,6 +72,7 @@ public final class FollowController {
     public func start() {
         guard phase == .off else { return }
         phase = .looking
+        tracker.reset()
         detection = nil
         lastSeen = nil
         searchStarted = nil
@@ -108,10 +114,19 @@ public final class FollowController {
         detecting = true
         let target = self.target
         let previous = detection?.box
+        let tracker = self.tracker
         Task { [weak self] in
-            // Vision runs off the main thread; results come back here.
-            let found = await Task.detached(priority: .userInitiated) {
-                TargetDetector.detect(frame, target: target, near: previous)
+            // Vision runs off the main thread; results come back here. Recognition first;
+            // if it misses, the object tracker keeps hold of a target seen earlier.
+            let found = await Task.detached(priority: .userInitiated) { () -> Detection? in
+                if let d = TargetDetector.detect(frame, target: target, near: previous) {
+                    tracker.seed(d.box)
+                    return d
+                }
+                if let t = tracker.track(frame) {
+                    return Detection(label: target.rawValue, confidence: t.confidence, box: t.box, source: .tracker)
+                }
+                return nil
             }.value
             self?.detecting = false
             self?.handle(found)
@@ -124,6 +139,16 @@ public final class FollowController {
 
         // Fall back to Claude's box if it's fresh and the on-device detector missed.
         var found = local
+        if let d = found {
+            if d.source == .tracker {
+                if let c = lastConfirmed, now.timeIntervalSince(c) > Self.trackerOnlyLimit {
+                    tracker.reset()                       // unconfirmed too long: it may have drifted
+                    found = nil
+                }
+            } else {
+                lastConfirmed = now
+            }
+        }
         if found == nil, let a = advice, a.targetVisible, let box = a.box, now.timeIntervalSince(a.date) < 1.5 {
             found = Detection(label: target.rawValue, confidence: 0.5, box: box, source: .claude)
         }
@@ -203,7 +228,8 @@ public final class FollowController {
         let searching = phase == .searching || phase == .lost || phase == .looking
         let interval = searching ? max(2.5, claudeInterval / 2) : claudeInterval
         if let last = lastClaudeAt, Date().timeIntervalSince(last) < interval { return }
-        guard let jpeg = Self.jpeg(frame, maxSide: 640) else { return }
+        // Without a local fix, send the frame at full size so Claude can spot a distant target.
+        guard let jpeg = Self.jpeg(frame, maxSide: detection == nil ? 1600 : 640) else { return }
 
         lastClaudeAt = Date()
         claudeBusy = true
@@ -216,6 +242,11 @@ public final class FollowController {
                 let a = try await claude.advise(jpeg: jpeg, target: target, context: context)
                 advice = a
                 claudeError = nil
+                // Claude spotted a target the Mac can't see (often a distant one): track it.
+                if a.targetVisible, let box = a.box {
+                    lastConfirmed = Date()
+                    if detection == nil { tracker.seed(box) }
+                }
                 if a.obstacleAhead || !a.safeToDrive { blockedUntil = Date().addingTimeInterval(4) }
             } catch {
                 claudeError = error.localizedDescription
