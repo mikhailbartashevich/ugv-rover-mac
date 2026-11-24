@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import RoverKit
 
 @MainActor
 final class NetPanelState: ObservableObject {
@@ -40,7 +41,7 @@ struct NetworkPanel: View {
             }
             LabeledContent("Default route", value: net.serviceName(for: net.defaultInterface) ?? "—")
             LabeledContent("Rover reachable via") {
-                if let i = net.interface(reaching: rover.baseURL?.host() ?? rover.host) {
+                if let i = net.interface(reaching: rover.hostIP) {
                     Text("\(i.service) · \(i.ipv4)")
                 } else {
                     Text("No matching interface").foregroundStyle(.orange)
@@ -64,13 +65,9 @@ struct NetworkPanel: View {
 
     // MARK: One-button setup
 
-    private var onRoverHotspot: Bool {
-        net.interfaces.contains { $0.ipv4.hasPrefix("192.168.50.") }
-    }
-
     private var setupSection: some View {
         Section {
-            if !onRoverHotspot && !prov.isRunning && prov.newHost == nil {
+            if !net.onRoverHotspot && !prov.isRunning && prov.newHost == nil {
                 Label {
                     Text("First, join the rover's **AccessPopup** Wi‑Fi (password `1234567890`) from the Wi‑Fi menu. Your internet will drop for about a minute.")
                 } icon: {
@@ -165,7 +162,7 @@ struct NetworkPanel: View {
                 Button(st.scanning ? "Scanning…" : "Scan", systemImage: "magnifyingglass") {
                     Task {
                         st.scanning = true; st.found = []; st.didScan = true
-                        st.found = await NetworkStatus.scanForRovers(prefixes: net.localPrefixes)
+                        st.found = await RoverScanner.scan(prefixes: net.localPrefixes)
                         st.scanning = false
                     }
                 }
@@ -174,7 +171,7 @@ struct NetworkPanel: View {
             }
             ForEach(st.found, id: \.self) { ip in
                 LabeledContent(ip) {
-                    Button("Use") { rover.host = ip; Task { await rover.ping() } }
+                    Button("Use") { rover.host = ip; Task { await rover.connect() } }
                 }
             }
             if !st.scanning && st.found.isEmpty && st.didScan {
