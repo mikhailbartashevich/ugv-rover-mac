@@ -11,24 +11,43 @@ final class NetPanelState: ObservableObject {
     @Published var found: [String] = []
     @Published var didScan = false
     @Published var orderMessage: String?
+    @Published var newSSID = ""
+    @Published var newPass = ""
+    @Published var moveMac = true
+    @Published var didAutoScan = false
 }
 
 struct NetworkPanel: View {
     @Environment(RoverClient.self) private var rover
     @Environment(NetworkStatus.self) private var net
     @Environment(RoverProvisioner.self) private var prov
+    @Environment(WiFiSwitcher.self) private var sw
     @StateObject private var st = NetPanelState()
 
     var body: some View {
         Form {
             macSection
-            setupSection
+            if showSwitch { switchSection }
+            if showSetup { setupSection }
             findSection
             cableSection
         }
         .formStyle(.grouped)
         .task { await net.loadPreferredNetworks() }
+        .task(id: showSwitch) {
+            // Ask the rover what it sees once per panel, while it's on a normal network.
+            guard showSwitch, !st.didAutoScan, sw.survey == nil, !sw.isRunning else { return }
+            st.didAutoScan = true
+            await sw.scan(rover: rover, sudoPassword: st.sudoPass)
+        }
     }
+
+    /// The rover is on a regular network the Mac shares (not its hotspot).
+    private var roverOnLAN: Bool {
+        rover.reachable == true && !net.onRoverHotspot && rover.hostIP != RoverClient.hotspotHost
+    }
+    private var showSwitch: Bool { roverOnLAN || sw.isRunning || !sw.steps.isEmpty }
+    private var showSetup: Bool { !roverOnLAN || prov.isRunning || !prov.steps.isEmpty }
 
     // MARK: This Mac
 
@@ -116,22 +135,7 @@ struct NetworkPanel: View {
             .disabled(prov.isRunning || st.homeSSID.isEmpty)
             .help("With this Mac on the rover's AccessPopup Wi‑Fi: saves your network on the rover, lets it switch over, puts the Mac back on your Wi‑Fi and finds the rover's new address. Takes about a minute; the rover remembers the network from then on.")
 
-            if !prov.steps.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(prov.steps) { s in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            stepIcon(s.state).frame(width: 16)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.title).foregroundStyle(s.state == .pending ? .secondary : .primary)
-                                if let d = s.detail {
-                                    Text(d).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .font(.callout)
-            }
+            stepList(prov.steps)
             if let e = prov.error {
                 Label(e, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
@@ -146,6 +150,150 @@ struct NetworkPanel: View {
             Label("Connect Rover to Home Wi‑Fi", systemImage: "wifi")
         } footer: {
             Text("The rover remembers this network and joins it on every boot. Away from home, it falls back to its AccessPopup hotspot.")
+        }
+    }
+
+    // MARK: Move to another Wi‑Fi
+
+    private var selectedNetwork: RoverWiFiNetwork? {
+        sw.survey?.nearby.first { $0.ssid == st.newSSID }
+    }
+    private var targetSaved: Bool { sw.survey?.isSaved(st.newSSID) == true }
+    private var needsPassword: Bool {
+        guard let n = selectedNetwork else { return false }
+        return !n.isOpen && !targetSaved && st.newPass.isEmpty
+    }
+    private var isCurrent: Bool { !st.newSSID.isEmpty && st.newSSID == sw.survey?.currentSSID }
+
+    private var switchSection: some View {
+        Section {
+            LabeledContent("Rover is on") {
+                HStack(spacing: 6) {
+                    if sw.isScanning { ProgressView().controlSize(.small) }
+                    if let s = sw.survey {
+                        Text(s.currentSSID.map { "\($0)\(s.ipv4.map { " · \($0)" } ?? "")" } ?? "No Wi‑Fi (Ethernet?)")
+                    } else {
+                        Text(sw.isScanning ? "Asking the rover…" : "—").foregroundStyle(.secondary)
+                    }
+                    Button { Task { await sw.scan(rover: rover, sudoPassword: st.sudoPass) } } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(sw.isScanning || sw.isRunning || rover.reachable != true)
+                    .help("Ask the rover (through its JupyterLab terminal) which Wi‑Fi it's on, which networks it can see right now, and which ones it has saved. Takes a few seconds; changes nothing.")
+                }
+            }
+            if let e = sw.scanError {
+                Label(e, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let nets = sw.survey?.nearby, !nets.isEmpty {
+                DisclosureGroup("Networks the rover can see (\(nets.count))") {
+                    ForEach(nets.prefix(12)) { n in networkRow(n) }
+                }
+            }
+
+            HStack {
+                TextField("Network name (SSID)", text: $st.newSSID)
+                    .help("The Wi‑Fi the rover should move to. Pick one from the list above, or type a name — hidden networks work too.")
+                if !net.preferredNetworks.isEmpty {
+                    Menu {
+                        ForEach(net.preferredNetworks, id: \.self) { n in Button(n) { st.newSSID = n } }
+                    } label: { Image(systemName: "list.bullet") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Pick from the Wi‑Fi networks this Mac has joined before.")
+                }
+            }
+            SecureField(targetSaved ? "Password (empty = keep the saved one)" : "Password", text: $st.newPass)
+                .help("That network's password. It's sent once to the rover and saved there, not on this Mac. Leave empty for an open network, or to keep the password the rover already has saved for it.")
+            Toggle("Move this Mac to it too", isOn: $st.moveMac)
+                .help("After the rover switches, put this Mac on the same network and find the rover there, so you can keep driving. Turn off if the Mac should stay where it is (e.g. you're setting the rover up for another place).")
+            DisclosureGroup("Advanced") {
+                SecureField("Rover sudo password (if required)", text: $st.sudoPass)
+                    .help("Only if the rover asks for one: the password of the rover's Linux user, needed to change its network settings.")
+            }
+
+            if needsPassword {
+                Text("“\(st.newSSID)” is secured and not saved on the rover yet — enter its password.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            Button {
+                Task {
+                    await sw.run(ssid: st.newSSID, password: st.newPass, sudoPassword: st.sudoPass,
+                                 moveMac: st.moveMac, rover: rover, net: net)
+                }
+            } label: {
+                HStack {
+                    if sw.isRunning { ProgressView().controlSize(.small) }
+                    Text(sw.isRunning ? "Switching…" : (st.newSSID.isEmpty ? "Move Rover" : "Move Rover to “\(st.newSSID)”"))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .disabled(sw.isRunning || st.newSSID.isEmpty || needsPassword || isCurrent || rover.reachable != true)
+            .help("Saves the network on the rover with top priority and switches to it. The rover keeps its other networks: if it can't join, it returns to the current one by itself within about 1½ minutes and the app tells you why.")
+
+            stepList(sw.steps)
+            if let e = sw.error {
+                Label(e, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            switch sw.outcome {
+            case .connected(let ip):
+                Label("Done! The rover is on “\(st.newSSID)” at \(ip).", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+            case .leftForNetwork(let ssid) where sw.error == nil:
+                Label("The rover is on “\(ssid)” now. To drive it, join “\(ssid)” with this Mac and press Scan below, or read its address on the rover's screen (line “W:”).",
+                      systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            default: EmptyView()
+            }
+        } header: {
+            Label("Move Rover to Another Wi‑Fi", systemImage: "arrow.left.arrow.right")
+        } footer: {
+            Text("Saved networks stay on the rover as fallbacks; it joins the newest one first. With no known network in range it opens its AccessPopup hotspot.")
+        }
+    }
+
+    private func networkRow(_ n: RoverWiFiNetwork) -> some View {
+        Button { st.newSSID = n.ssid } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "wifi", variableValue: Double(n.signal) / 100)
+                    .frame(width: 18)
+                Text(n.ssid).lineLimit(1)
+                if n.inUse { Text("current").font(.caption).foregroundStyle(.green) }
+                else if sw.survey?.isSaved(n.ssid) == true { Text("saved").font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                if !n.isOpen { Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary) }
+                if st.newSSID == n.ssid { Image(systemName: "checkmark").foregroundStyle(.tint) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(n.ssid) — signal \(n.signal)%, \(n.isOpen ? "open" : n.security). Click to choose it.")
+    }
+
+    @ViewBuilder private func stepList(_ steps: [RoverProvisioner.Step]) -> some View {
+        if !steps.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(steps) { s in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        stepIcon(s.state).frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(s.title).foregroundStyle(s.state == .pending ? .secondary : .primary)
+                            if let d = s.detail {
+                                Text(d).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .font(.callout)
         }
     }
 

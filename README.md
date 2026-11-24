@@ -40,6 +40,14 @@ New in this app:
 
 When no known network is in range, the rover falls back to the AccessPopup hotspot. If the rover's user needs a password for `sudo`, enter it under **Advanced**.
 
+## Move the rover to another Wi‑Fi
+
+While the rover is on a normal network, Network → **Move Rover to Another Wi‑Fi** lists the networks the rover can see, and which of them it has saved. Pick one or type a name, enter its password, then press **Move Rover**. With **Move this Mac to it too** switched on, the Mac joins the same network afterwards and finds the rover there. With it off, the app waits to see whether the rover comes back and tells you how to reach it.
+
+How it works on the rover (NetworkManager, through the JupyterLab terminal):
+- Saved Wi‑Fi profiles are never deleted. The target network gets a profile (`ugv-<SSID>`), or its existing profile is updated. Its autoconnect priority is set above every other client profile, so the rover prefers it on boot. All the other profiles stay as fallbacks.
+- The switch runs detached on the rover (`nmcli connection up`). If joining fails, the rover removes the profile it just created (or puts back the old priority and password) and returns to the previous network. If that also fails, AccessPopup opens the hotspot. The outcome is written to `/tmp/ugv_wifi_result`, and the app reads it to explain a failure, for example a wrong password.
+
 ## Follow the cat
 
 Press **F**, the paw button, or *Follow* in the inspector. The rover keeps the target centred and creeps closer at up to 0.12 m/s. It stops once the target fills the chosen share of the frame, and it never reverses.

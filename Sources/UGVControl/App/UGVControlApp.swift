@@ -12,6 +12,7 @@ struct UGVControlApp: App {
     private let media = MediaLibrary()
     private let provisioner = RoverProvisioner()
     private let cameraSetup = CameraSetup()
+    private let wifiSwitcher = WiFiSwitcher()
     private let follow: FollowController
 
     init() {
@@ -34,6 +35,7 @@ struct UGVControlApp: App {
                 .environment(provisioner)
                 .environment(follow)
                 .environment(cameraSetup)
+                .environment(wifiSwitcher)
                 .frame(minWidth: 920, minHeight: 620)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
         }
