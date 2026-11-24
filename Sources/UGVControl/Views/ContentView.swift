@@ -109,7 +109,17 @@ struct VideoView: View {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .opacity(video.isReconnecting ? 0.4 : 1)
                     .overlay { Crosshair() }
+                    .overlay {
+                        if video.isReconnecting {
+                            Label("Reconnecting video…", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.callout.weight(.medium))
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .glassEffect(.regular, in: .capsule)
+                                .help("The video stream dropped (for example while the rover's program restarts). The app retries every 2 seconds.")
+                        }
+                    }
                     .overlay { DetectionOverlay() }
             } else {
                 ContentUnavailableView {

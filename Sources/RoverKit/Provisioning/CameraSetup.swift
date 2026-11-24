@@ -18,7 +18,9 @@ public struct CameraResolution: Hashable, Identifiable, Sendable {
 
 /// Changes the camera resolution in the rover's config.yaml (default_res_w/h) through
 /// its JupyterLab terminal, then restarts the rover's program so it takes effect.
-/// The original config is kept as config.yaml.bak-ugvcontrol.
+/// The original config is kept as config.yaml.bak-ugvcontrol. USB cameras are also
+/// switched to MJPG in cv_ctrl.py (backup: cv_ctrl.py.bak-ugvcontrol), without which
+/// high resolutions drop to a few dark frames per second.
 @MainActor
 @Observable
 public final class CameraSetup {
@@ -93,6 +95,29 @@ public final class CameraSetup {
         sed -i -E 's/^([[:space:]]*default_res_w:).*/\\1 \(r.width)/; s/^([[:space:]]*default_res_h:).*/\\1 \(r.height)/' "$CFG"
         grep -q "default_res_w: \(r.width)" "$CFG" || fail "couldn't edit $CFG"
         echo "\(ProvisionScript.infoMarker) $CFG"
+        # USB cameras opened without a format fall back to uncompressed YUYV, which is
+        # ~5 fps (and dark) at high resolutions. Ask OpenCV for MJPG instead.
+        CV="$DIR/cv_ctrl.py"
+        if [ -f "$CV" ] && ! grep -q "UGVControl: MJPG" "$CV"; then
+          [ -f "$CV.bak-ugvcontrol" ] || cp "$CV" "$CV.bak-ugvcontrol"
+          python3 - "$CV" <<'PY' || fail "couldn't patch cv_ctrl.py"
+        import sys
+        p = sys.argv[1]
+        lines = open(p).read().split("\\n")
+        out = []
+        for i, line in enumerate(lines):
+            out.append(line)
+            if line.strip() == "self.camera = cv2.VideoCapture(0)":
+                ind = line[:len(line) - len(line.lstrip())]
+                out.append(ind + "self.camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # UGVControl: MJPG")
+                nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                if not nxt.startswith("self.camera.set(cv2.CAP_PROP_FRAME_WIDTH"):
+                    out.append(ind + "self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, f['video']['default_res_w'])")
+                    out.append(ind + "self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, f['video']['default_res_h'])")
+        open(p, "w").write("\\n".join(out))
+        PY
+          grep -q "UGVControl: MJPG" "$CV" || fail "couldn't patch cv_ctrl.py"
+        fi
         kill "$P"; sleep 2; kill -9 "$P" 2>/dev/null
         export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
         cd "$HOME" && setsid nohup "$PY" "$APP" >> "$HOME/ugv.log" 2>&1 < /dev/null &

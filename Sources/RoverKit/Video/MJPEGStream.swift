@@ -2,6 +2,9 @@ import AppKit
 import Observation
 
 /// Reader for the rover's `/video_feed` (multipart/x-mixed-replace JPEG stream).
+///
+/// Keeps itself alive: if the stream drops (e.g. the rover's program restarts) or
+/// stalls with no frames, it reconnects every couple of seconds until `stop()`.
 @MainActor
 @Observable
 public final class MJPEGStream: NSObject {
@@ -10,6 +13,8 @@ public final class MJPEGStream: NSObject {
     public private(set) var error: String?
     /// Frames per second measured on the Mac side.
     public private(set) var fps: Double = 0
+    /// The stream dropped and is being re-opened.
+    public private(set) var isReconnecting = false
 
     @ObservationIgnored private var session: URLSession?
     @ObservationIgnored private var task: URLSessionDataTask?
@@ -20,11 +25,39 @@ public final class MJPEGStream: NSObject {
     @ObservationIgnored public private(set) var latestCGImage: CGImage?
     @ObservationIgnored private var frameCount = 0
     @ObservationIgnored private var fpsWindowStart = Date()
+    @ObservationIgnored private var url: URL?
+    @ObservationIgnored private var wantsRunning = false
+    @ObservationIgnored private var startedAt = Date()
+    @ObservationIgnored private var watchdog: Timer?
+
+    /// No frame for this long counts as a stall.
+    static let stallTimeout: TimeInterval = 6
 
     public override init() { super.init() }
 
     public func start(url: URL) {
-        stop()
+        self.url = url
+        wantsRunning = true
+        open(url)
+        if watchdog == nil {
+            watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkHealth() }
+            }
+        }
+    }
+
+    /// Stops for good (until the next `start`).
+    public func stop() {
+        wantsRunning = false
+        isReconnecting = false
+        watchdog?.invalidate()
+        watchdog = nil
+        close()
+    }
+
+    private func open(_ url: URL) {
+        close()
+        startedAt = Date()
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 5
         cfg.timeoutIntervalForResource = .infinity
@@ -37,7 +70,7 @@ public final class MJPEGStream: NSObject {
         error = nil
     }
 
-    public func stop() {
+    private func close() {
         task?.cancel()
         session?.invalidateAndCancel()
         task = nil
@@ -53,7 +86,18 @@ public final class MJPEGStream: NSObject {
         return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.92])
     }
 
+    /// Re-opens the stream if it dropped or stalled.
+    private func checkHealth() {
+        guard wantsRunning, let url else { return }
+        let lastSign = max(lastFrameAt ?? .distantPast, startedAt)
+        if !isRunning || Date().timeIntervalSince(lastSign) > Self.stallTimeout {
+            isReconnecting = true
+            open(url)
+        }
+    }
+
     private func didReceive(_ img: NSImage) {
+        isReconnecting = false
         image = img
         lastFrameAt = Date()
         latestCGImage = img.cgImage(forProposedRect: nil, context: nil, hints: nil)
