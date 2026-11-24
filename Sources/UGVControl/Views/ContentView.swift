@@ -128,7 +128,7 @@ struct VideoView: View {
                     Label(video.isRunning ? "Starting Video…" : "No Video", systemImage: video.isRunning ? "video" : "video.slash")
                 } description: {
                     Text(video.error ?? (video.isRunning
-                        ? "Waiting for the camera's next keyframe — this can take up to 8 seconds."
+                        ? "Waiting for the camera's next keyframe…"
                         : "Connect to the rover to see the camera feed."))
                 }
                 .foregroundStyle(.white.opacity(0.7))

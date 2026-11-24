@@ -45,7 +45,7 @@ public final class VideoStream {
 
     /// No RTP packets for this long counts as a stall.
     static let stallTimeout: TimeInterval = 5
-    /// The rover sends a keyframe only every ~8 s (x264 default GOP), so the first
+    /// Stock ugv_rpi sends a keyframe only every ~8 s (x264's default GOP), so the first
     /// picture can take that long; give up on a connection that shows nothing for longer.
     static let firstFrameTimeout: TimeInterval = 20
 
