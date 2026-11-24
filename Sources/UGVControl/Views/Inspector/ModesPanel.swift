@@ -81,7 +81,6 @@ struct ModesPanel: View {
                 .help("Digital zoom of the rover's camera (Z cycles). Affects the stream, photos and recordings.")
                 .pickerStyle(.segmented)
                 .disabled(!rover.socket.isConnected)
-                VideoQualityRow()
                 CameraResolutionRow()
             }
 
@@ -117,33 +116,10 @@ extension VisionMode {
     }
 }
 
-/// JPEG quality of the stream. Applied when the slider is released.
-private struct VideoQualityRow: View {
-    @Environment(RoverClient.self) private var rover
-    @StateObject private var draft = DraftValue()
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("Video quality")
-            Slider(value: Binding(get: { draft.value ?? Double(rover.videoQuality) }, set: { draft.value = $0 }),
-                   in: 10...95, step: 5) { editing in
-                if !editing, let v = draft.value {
-                    rover.videoQuality = Int(v)
-                    draft.value = nil
-                    Task { await rover.applyVideoQuality() }
-                }
-            }
-            .frame(minWidth: 120)
-            Text("\(Int(draft.value ?? Double(rover.videoQuality)))").monospacedDigit().foregroundStyle(.secondary).frame(width: 28)
-        }
-        .help("JPEG quality of the video the rover sends (its default is a very compressed 20). Higher keeps distant details sharp — important for spotting a cat far away — at the cost of more Wi‑Fi bandwidth. 60–75 is a good balance. Re-applied every time the app connects.")
-    }
-}
-
 /// Camera resolution, changed in the rover's config and applied by restarting its program.
 private struct CameraResolutionRow: View {
     @Environment(RoverClient.self) private var rover
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
     @Environment(CameraSetup.self) private var setup
     @StateObject private var state = CameraRowState()
 
@@ -154,10 +130,10 @@ private struct CameraResolutionRow: View {
                     ForEach(CameraResolution.options) { Text($0.title).tag($0) }
                 }
                 .disabled(setup.isRunning)
-                .help("How many pixels the rover's camera captures. 640 × 480 is the rover's default. 1280 × 960 has four times the pixels, so a cat stays recognisable roughly twice as far away (about 8–10 m instead of 4–5 m), but the Raspberry Pi works harder and the frame rate may drop.")
+                .help("How many pixels the rover's camera captures and streams. 1280 × 960 is the rover's default. It has four times the pixels of 640 × 480, so a cat stays recognisable roughly twice as far away, but the Raspberry Pi works harder and the frame rate may drop.")
                 Button(setup.isRunning ? "Applying…" : "Apply") { state.confirm = true }
                     .disabled(setup.isRunning || (state.choice ?? setup.applied) == setup.applied || rover.reachable != true)
-                    .help("Write the new resolution to the rover's config.yaml through its JupyterLab and restart the rover's program (about 15 seconds without video). The original config is kept as config.yaml.bak-ugvcontrol.")
+                    .help("Write the new resolution to the rover's config.yaml through its JupyterLab and restart the rover's program and its video server (about 20 seconds without video). The original config is kept as config.yaml.bak-ugvcontrol.")
             }
             if let s = setup.status, setup.isRunning || setup.error == nil {
                 HStack(spacing: 6) {
@@ -169,6 +145,7 @@ private struct CameraResolutionRow: View {
                 Label(e, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
             }
         }
+        .task(id: rover.reachable) { if rover.reachable == true { await setup.refresh(rover: rover) } }
         .confirmationDialog("Restart the rover's program at \((state.choice ?? setup.applied).title)?", isPresented: $state.confirm) {
             Button("Apply and Restart") {
                 let res = state.choice ?? setup.applied
@@ -179,14 +156,9 @@ private struct CameraResolutionRow: View {
                 }
             }
         } message: {
-            Text("The rover stops and drops video for about 15 seconds while its program restarts.")
+            Text("The rover stops and drops video for about 20 seconds while its program restarts.")
         }
     }
-}
-
-@MainActor
-final class DraftValue: ObservableObject {
-    @Published var value: Double?
 }
 
 @MainActor

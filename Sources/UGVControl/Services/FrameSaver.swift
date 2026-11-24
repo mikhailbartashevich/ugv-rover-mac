@@ -4,7 +4,7 @@ import RoverKit
 /// Saves the current video frame to ~/Pictures/UGV Rover/ on the Mac.
 @MainActor
 enum FrameSaver {
-    static func save(from video: MJPEGStream, rover: RoverClient) {
+    static func save(from video: VideoStream, rover: RoverClient) {
         guard let jpeg = video.currentJPEG else {
             rover.show("No video frame to save", symbol: "video.slash")
             return

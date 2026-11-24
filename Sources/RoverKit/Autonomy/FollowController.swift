@@ -44,7 +44,7 @@ public final class FollowController {
     public let claude: ClaudeVision
 
     private let rover: RoverClient
-    private let video: MJPEGStream
+    private let video: VideoStream
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var detecting = false
     @ObservationIgnored private var lastSeen: Date?
@@ -59,7 +59,7 @@ public final class FollowController {
     /// How long the tracker may follow on its own before it must be confirmed.
     static let trackerOnlyLimit: TimeInterval = 10
 
-    public init(rover: RoverClient, video: MJPEGStream, claude: ClaudeVision) {
+    public init(rover: RoverClient, video: VideoStream, claude: ClaudeVision) {
         self.rover = rover
         self.video = video
         self.claude = claude

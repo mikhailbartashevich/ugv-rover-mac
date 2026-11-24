@@ -29,7 +29,15 @@ public final class RoverClient {
     public var baseURL: URL? {
         URL(string: host.contains(":") ? "http://\(host)" : "http://\(host):\(defaultPort)")
     }
-    public var videoURL: URL? { baseURL?.appendingPathComponent("video_feed") }
+    /// The camera as H.264 over RTSP, served by the rover's mediamtx (`rtsp://<ip>:8554/cam`).
+    /// The RTSP port sits 3554 above the web port, so a mock rover on :5055 streams on :8609.
+    public var videoURL: URL? {
+        guard let base = baseURL else { return nil }
+        let host = base.host() ?? ""
+        let web = base.port ?? defaultPort
+        return URL(string: "rtsp://\(host.contains(":") ? "[\(host)]" : host):\(web + Self.rtspPortOffset)/cam")
+    }
+    public static let rtspPortOffset = 8554 - 5000
     public var hostIP: String { baseURL?.host() ?? host }
 
     // MARK: Driving
@@ -49,11 +57,6 @@ public final class RoverClient {
     public private(set) var tilt: Double = 0
     public private(set) var steady = false
     public private(set) var zoom: CameraZoom = .x1
-    /// JPEG quality of the video stream, 1–100. The rover starts at 20, which smears
-    /// distant detail into blocks; this is re-applied on every connect.
-    public var videoQuality: Int = UserDefaults.standard.object(forKey: "videoQuality") as? Int ?? 70 {
-        didSet { UserDefaults.standard.set(videoQuality, forKey: "videoQuality") }
-    }
     public private(set) var recordingSince: Date?
     public var isRecording: Bool { recordingSince != nil }
 
@@ -98,7 +101,6 @@ public final class RoverClient {
         await ping()
         if reachable == true, let base = baseURL {
             socket.connect(to: base)
-            await applyVideoQuality()
         } else {
             socket.disconnect()
         }
@@ -190,8 +192,9 @@ public final class RoverClient {
         }
     }
 
-    private func ctrl(_ code: Int) -> Bool {
-        if socket.emitCtrl(code) { return true }
+    private func ctrl(_ command: CtrlCommand) -> Bool {
+        lastSent = command.json
+        if socket.emitCtrl(command) { return true }
         show("Control channel offline", symbol: "bolt.horizontal.circle")
         return false
     }
@@ -306,29 +309,24 @@ public final class RoverClient {
     }
 
     public func setZoom(_ z: CameraZoom) {
-        guard ctrl(z.code) else { return }
+        guard ctrl(.zoom(z)) else { return }
         zoom = z
     }
 
     public func cycleZoom() { setZoom(zoom.next) }
 
-    /// Sends the stream quality to the rover (`video -q N` on its command line).
-    public func applyVideoQuality() async {
-        await sendCommandLine("video -q \(videoQuality.clamped(to: 1...100))")
-    }
-
     public func capturePhoto() {
-        guard ctrl(RoverCode.capturePhoto) else { return }
+        guard ctrl(.capturePhoto) else { return }
         show("Photo saved on rover", symbol: "camera.fill")
     }
 
     public func toggleRecording() {
         if isRecording {
-            guard ctrl(RoverCode.recordStop) else { return }
+            guard ctrl(.recording(false)) else { return }
             recordingSince = nil
             show("Recording saved on rover", symbol: "stop.circle")
         } else {
-            guard ctrl(RoverCode.recordStart) else { return }
+            guard ctrl(.recording(true)) else { return }
             recordingSince = Date()
         }
     }
@@ -336,7 +334,7 @@ public final class RoverClient {
     // MARK: - Lights
 
     public func setHeadLight(_ mode: HeadLight) {
-        guard ctrl(mode.code) else { return }
+        guard ctrl(.headLight(mode)) else { return }
         remember("head", mode)
     }
 
@@ -345,24 +343,24 @@ public final class RoverClient {
     }
 
     public func setChassisLight(_ on: Bool) {
-        guard ctrl(on ? RoverCode.chassisLightOn : RoverCode.chassisLightOff) else { return }
+        guard ctrl(.chassisLight(on ? 255 : 0)) else { return }
         remember("chassis", on)
     }
 
     // MARK: - Vision
 
     public func setVisionMode(_ mode: VisionMode) {
-        guard ctrl(mode.rawValue) else { return }
+        guard ctrl(.vision(mode)) else { return }
         remember("vision", mode)
     }
 
     public func setReaction(_ r: DetectionReaction) {
-        guard ctrl(r.rawValue) else { return }
+        guard ctrl(.reaction(r)) else { return }
         remember("reaction", r)
     }
 
     public func setMovementLocked(_ locked: Bool) {
-        guard ctrl(locked ? RoverCode.movementLock : RoverCode.movementUnlock) else { return }
+        guard ctrl(.movementLocked(locked)) else { return }
         remember("lock", locked)
     }
 

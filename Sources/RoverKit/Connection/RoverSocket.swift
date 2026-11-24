@@ -45,12 +45,11 @@ public final class RoverSocket {
         state = .disconnected
     }
 
-    /// Mode/action command, same as the web UI's `cmdSend(A, B, C)`.
+    /// Mode/action command, same as the web UI's `socketCtrl.send(JSON.stringify({cmd, mode}))`.
     @discardableResult
-    public func emitCtrl(_ code: Int, b: Int = 0, c: Int = 0) -> Bool {
+    public func emitCtrl(_ command: CtrlCommand) -> Bool {
         guard state == .connected else { return false }
-        let message = "{\"A\":\(code),\"B\":\(b),\"C\":\(c)}"
-        guard let data = try? JSONSerialization.data(withJSONObject: ["message", message]),
+        guard let data = try? JSONSerialization.data(withJSONObject: ["message", command.json]),
               let s = String(data: data, encoding: .utf8) else { return false }
         sendRaw("42/ctrl," + s)
         return true

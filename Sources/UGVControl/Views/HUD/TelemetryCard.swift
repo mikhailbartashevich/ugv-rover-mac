@@ -4,7 +4,7 @@ import RoverKit
 /// Battery and system stats reported by the rover (top-left).
 struct TelemetryCard: View {
     @Environment(RoverClient.self) private var rover
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
 
     var body: some View {
         let t = rover.telemetry

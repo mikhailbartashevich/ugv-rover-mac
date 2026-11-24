@@ -1,13 +1,44 @@
-/// Action codes the rover's host program accepts on the Socket.IO `/ctrl` channel
-/// (`{"A": code, "B": 0, "C": 0}`), as defined in ugv_rpi's config.yaml.
+/// A command on the rover's Socket.IO `/ctrl` channel: `{"cmd": X, "mode": Y}`, the way
+/// the stock web UI's `cmdSend(cmd, mode)` sends it. `cmd` picks the action and `mode`
+/// is its argument; both are codes from ugv_rpi's config.yaml (`code:` and `fb:`).
+public struct CtrlCommand: Equatable, Sendable {
+    public let cmd: Int
+    public let mode: Int
+
+    public init(_ cmd: Int, mode: Int = 0) {
+        self.cmd = cmd
+        self.mode = mode
+    }
+
+    public var json: String { #"{"cmd":\#(cmd),"mode":\#(mode)}"# }
+
+    public static let capturePhoto = CtrlCommand(RoverCode.capturePhoto)
+    public static func recording(_ on: Bool) -> CtrlCommand { CtrlCommand(RoverCode.video, mode: on ? 1 : 0) }
+    public static func zoom(_ z: CameraZoom) -> CtrlCommand { CtrlCommand(RoverCode.zoom, mode: z.rawValue) }
+    public static func vision(_ m: VisionMode) -> CtrlCommand { CtrlCommand(RoverCode.detectType, mode: m.rawValue) }
+    public static func reaction(_ r: DetectionReaction) -> CtrlCommand { CtrlCommand(RoverCode.detectReact, mode: r.rawValue) }
+    public static func headLight(_ l: HeadLight) -> CtrlCommand { CtrlCommand(RoverCode.headLight, mode: l.code) }
+    public static func movementLocked(_ locked: Bool) -> CtrlCommand {
+        CtrlCommand(RoverCode.movementLock, mode: locked ? RoverCode.lockOn : RoverCode.lockOff)
+    }
+    /// Chassis lights: `mode` is the PWM value, 0…255.
+    public static func chassisLight(_ pwm: Int) -> CtrlCommand { CtrlCommand(RoverCode.chassisLight, mode: pwm) }
+}
+
+/// Codes from ugv_rpi's config.yaml.
 public enum RoverCode {
+    // Commands (`cmd`). Feedback keys double as the command that sets them.
+    public static let detectType = 101       // fb.detect_type, mode = VisionMode
+    public static let headLight = 102        // fb.led_mode, mode = led_off/led_aut/led_ton
+    public static let detectReact = 103      // fb.detect_react, mode = DetectionReaction
+    public static let movementLock = 114     // fb.cv_movtion_mode, mode = mc_lock/mc_unlo
+    public static let chassisLight = 115     // fb.base_light, mode = PWM 0…255
+    public static let zoom = 10104           // mode = 1, 2 or 4
     public static let capturePhoto = 10201
-    public static let recordStart = 10202
-    public static let recordStop = 10203
-    public static let movementLock = 10501
-    public static let movementUnlock = 10502
-    public static let chassisLightOff = 10407
-    public static let chassisLightOn = 10408
+    public static let video = 10203          // mode = 1 start, 0 stop
+    // Arguments (`mode`).
+    public static let lockOn = 10501
+    public static let lockOff = 10502
 }
 
 /// Computer-vision mode. Only one can be active at a time.
@@ -82,6 +113,8 @@ public enum DetectionReaction: Int, CaseIterable, Identifiable, Sendable {
 public enum HeadLight: Int, CaseIterable, Identifiable, Sendable {
     case off = 0, auto = 1, on = 2
     public var id: Int { rawValue }
+    /// The `mode` that selects it (config.yaml led_off / led_aut / led_ton). Telemetry
+    /// key 102 reports the raw value (0 / 1 / 2).
     public var code: Int { [10404, 10405, 10406][rawValue] }
     public var title: String { ["Off", "Auto", "On"][rawValue] }
     public var symbol: String { ["lightbulb.slash", "lightbulb.min", "lightbulb.max.fill"][rawValue] }
@@ -90,7 +123,6 @@ public enum HeadLight: Int, CaseIterable, Identifiable, Sendable {
 public enum CameraZoom: Int, CaseIterable, Identifiable, Sendable {
     case x1 = 1, x2 = 2, x4 = 4
     public var id: Int { rawValue }
-    public var code: Int { switch self { case .x1: 10104; case .x2: 10105; case .x4: 10106 } }
     public var title: String { "\(rawValue)×" }
     public var next: CameraZoom { switch self { case .x1: .x2; case .x2: .x4; case .x4: .x1 } }
 }

@@ -60,6 +60,23 @@ struct MockRoverTests {
         rover.socket.disconnect()
     }
 
+    @Test func videoStreamDecodesFrames() async throws {
+        let rover = RoverClient()
+        rover.host = host
+        let url = try #require(rover.videoURL)
+        let video = VideoStream()
+        video.start(url: url)
+        // The rover sends a keyframe every ~8 s, so the first picture can take a while.
+        #expect(await waitUntil(25) { video.lastFrameAt != nil }, "\(video.error ?? "no frame")")
+        let frame = try #require(video.latestCGImage)
+        #expect(frame.width >= 320 && frame.height >= 240)
+        #expect(video.videoSize == CGSize(width: frame.width, height: frame.height))
+        #expect(video.currentJPEG != nil)
+        try? await Task.sleep(for: .seconds(2))
+        #expect(video.fps > 5, "frames keep coming")
+        video.stop()
+    }
+
     /// Needs UGV_TEST_ROVER_LOG pointing at the mock's data/commands.log.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["UGV_TEST_ROVER_LOG"] != nil))
     func drivingGoesOverSocketAndStops() async throws {
@@ -110,6 +127,32 @@ struct DiscoveryTests {
         await rover.connectOrDiscover(localPrefixes: [prefix])
         #expect(rover.host == target)
         #expect(rover.reachable == true)
+        rover.socket.disconnect()
+    }
+}
+
+/// Restarts the rover's program through JupyterLab (same resolution, so nothing changes)
+/// and checks that app.py, mediamtx and the video come back.
+///   UGV_TEST_CAMERA_SETUP=192.168.0.111 Tools/test.sh --filter CameraSetupLive
+@Suite("CameraSetupLive", .enabled(if: ProcessInfo.processInfo.environment["UGV_TEST_CAMERA_SETUP"] != nil))
+@MainActor
+struct CameraSetupLiveTests {
+    @Test func restartKeepsResolutionAndVideoComesBack() async throws {
+        let rover = RoverClient()
+        rover.host = ProcessInfo.processInfo.environment["UGV_TEST_CAMERA_SETUP"]!
+        await rover.connect()
+        let setup = CameraSetup()
+        await setup.refresh(rover: rover)
+        let res = setup.applied
+        await setup.apply(res, rover: rover)
+        #expect(setup.error == nil, "\(setup.error ?? "")")
+        let video = VideoStream()
+        video.start(url: try #require(rover.videoURL))
+        let end = Date().addingTimeInterval(60)
+        while Date() < end, video.lastFrameAt == nil { try await Task.sleep(for: .milliseconds(200)) }
+        #expect(video.lastFrameAt != nil, "video is back after the restart")
+        #expect(video.latestCGImage?.width == res.width)
+        video.stop()
         rover.socket.disconnect()
     }
 }

@@ -8,7 +8,7 @@ struct UGVControlApp: App {
     // (SwiftUI's @State macro isn't available with Command Line Tools only).
     private let rover: RoverClient
     private let net = NetworkStatus()
-    private let video: MJPEGStream
+    private let video: VideoStream
     private let media = MediaLibrary()
     private let provisioner = RoverProvisioner()
     private let cameraSetup = CameraSetup()
@@ -19,7 +19,7 @@ struct UGVControlApp: App {
         // A plain SwiftPM binary needs this to get a Dock icon and a key window.
         NSApplication.shared.setActivationPolicy(.regular)
         let rover = RoverClient()
-        let video = MJPEGStream()
+        let video = VideoStream()
         self.rover = rover
         self.video = video
         follow = FollowController(rover: rover, video: video, claude: ClaudeVision(apiKey: { APIKeyStore.load() }))

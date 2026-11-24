@@ -4,7 +4,7 @@ import RoverKit
 /// Rover address field in the middle of the toolbar.
 struct HostField: View {
     @Environment(RoverClient.self) private var rover
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
 
     var body: some View {
         @Bindable var rover = rover

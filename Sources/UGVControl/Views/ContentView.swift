@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import RoverKit
 
 enum InspectorTab: String, CaseIterable, Identifiable {
@@ -34,7 +35,7 @@ final class WindowState: ObservableObject {
 struct ContentView: View {
     @Environment(RoverClient.self) private var rover
     @Environment(NetworkStatus.self) private var net
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
     @Environment(FollowController.self) private var follow
     @StateObject private var window = WindowState()
 
@@ -100,16 +101,17 @@ struct ContentView: View {
 
 /// Camera feed with the centre reticle.
 struct VideoView: View {
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
 
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(white: 0.10), Color(white: 0.04)], startPoint: .top, endPoint: .bottom)
-            if let img = video.image {
-                Image(nsImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .opacity(video.isReconnecting ? 0.4 : 1)
+            VideoLayerView(layer: video.displayLayer)
+                .aspectRatio(video.videoSize, contentMode: .fit)
+                .opacity(video.hasFrame ? (video.isReconnecting ? 0.4 : 1) : 0)
+            if video.hasFrame {
+                Color.clear
+                    .aspectRatio(video.videoSize, contentMode: .fit)
                     .overlay { Crosshair() }
                     .overlay {
                         if video.isReconnecting {
@@ -123,12 +125,55 @@ struct VideoView: View {
                     .overlay { DetectionOverlay() }
             } else {
                 ContentUnavailableView {
-                    Label("No Video", systemImage: "video.slash")
+                    Label(video.isRunning ? "Starting Video…" : "No Video", systemImage: video.isRunning ? "video" : "video.slash")
                 } description: {
-                    Text(video.error ?? "Connect to the rover to see the camera feed.")
+                    Text(video.error ?? (video.isRunning
+                        ? "Waiting for the camera's next keyframe — this can take up to 8 seconds."
+                        : "Connect to the rover to see the camera feed."))
                 }
                 .foregroundStyle(.white.opacity(0.7))
             }
+        }
+    }
+}
+
+/// Hosts the stream's `AVSampleBufferDisplayLayer`, which shows each decoded frame
+/// as soon as it arrives, without going through SwiftUI.
+struct VideoLayerView: NSViewRepresentable {
+    let layer: AVSampleBufferDisplayLayer
+
+    func makeNSView(context: Context) -> LayerHostView {
+        let v = LayerHostView()
+        v.hosted = layer
+        return v
+    }
+
+    func updateNSView(_ v: LayerHostView, context: Context) {
+        if v.hosted !== layer { v.hosted = layer }
+    }
+
+    final class LayerHostView: NSView {
+        var hosted: CALayer? {
+            didSet {
+                oldValue?.removeFromSuperlayer()
+                if let hosted { layer?.addSublayer(hosted) }
+                needsLayout = true
+            }
+        }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            hosted?.frame = bounds
+            CATransaction.commit()
         }
     }
 }

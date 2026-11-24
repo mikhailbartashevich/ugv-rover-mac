@@ -5,7 +5,7 @@ import RoverKit
 /// KeyboardDriver; the menu carries the ⌘ shortcuts.
 struct RoverCommands: Commands {
     let rover: RoverClient
-    let video: MJPEGStream
+    let video: VideoStream
     let follow: FollowController
 
     var body: some Commands {

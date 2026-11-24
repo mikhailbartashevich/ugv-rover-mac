@@ -1,7 +1,8 @@
 # UGV Control (macOS)
 
 Native macOS 26+ app for the [Waveshare UGV Rover](https://www.waveshare.com/wiki/UGV-Rover)
-(Raspberry Pi host + ESP32). It covers the rover's stock web UI and adds a few things
+(Raspberry Pi host + ESP32), for the rover's current software: `ugv_rpi` branch
+`refactor/debian12-2025.10.01-py3.11` (H.264 video through mediamtx). It covers the rover's stock web UI and adds a few things
 of its own. It can also move the rover onto your home Wi‑Fi, so your Mac keeps its internet.
 
 ## Build & install
@@ -21,7 +22,7 @@ From the stock web UI:
 - Driving with Slow / Middle / Fast presets; camera pan-tilt with Steady and Look Ahead
 - Photo, video recording and zoom (1× / 2× / 4×) on the rover
 - Vision modes: Motion, Faces, Objects, Color, Hand Gestures, Auto Drive, MediaPipe Face Mesh and Body Pose
-- Detection reactions (photo / record), movement lock, head light Off / Auto / On, chassis lights, stream quality
+- Detection reactions (photo / record), movement lock, head light Off / Auto / On, chassis lights, camera resolution
 - Photo and video gallery, plus a command console
 
 New in this app:
@@ -61,8 +62,8 @@ Press **F**, the paw button, or *Follow* in the inspector. The rover keeps the t
 
 On-device recognition needs the target to be roughly 50 px tall in the video, and image quality matters as much as size:
 
-- **Video quality**: the rover streams at JPEG quality 20 by default, which smears distant detail into blocks. The app sets 70 on every connect (Modes › Camera › Video quality).
-- **Camera resolution**: Modes › Camera › Camera resolution › Apply changes `default_res_w/h` in the rover's `config.yaml` through JupyterLab and restarts its program. The original is kept as `config.yaml.bak-ugvcontrol`. At 1280 × 960 a cat stays recognisable about twice as far away as at 640 × 480, at the cost of more Raspberry Pi CPU.
+- **Video quality**: the rover encodes H.264 at a fixed 300 kbit/s (set in its `controllers/cv_ctrl.py`), so fine distant detail is soft; the app doesn't change the rover's code.
+- **Camera resolution**: Modes › Camera › Camera resolution shows the resolution in the rover's `config.yaml` (read from its `/config`). Apply changes `video.default_res_w/h` through JupyterLab and restarts the rover's program together with the mediamtx and ffmpeg it runs. The original is kept as `config.yaml.bak-ugvcontrol`. 1280 × 960 (the rover's default) keeps a cat recognisable about twice as far away as 640 × 480, at the cost of more Raspberry Pi CPU.
 - **Claude as a spotter**: when the Mac sees nothing, Claude gets the full-size frame and finds targets far smaller than Vision can. Vision's object tracker then holds on to the target. The tracker can follow on its own for up to 10 s; after that the detector or Claude must confirm the target again.
 
 In the simulator, a cat 10 % of the frame tall is found on-device. One about 6 % tall is found only with Claude's help.
@@ -94,7 +95,7 @@ Sources/
   RoverKit/                    rover protocol & networking, no UI
     Protocol/                  action codes, ESP32 JSON commands
     Connection/                RoverClient, Socket.IO client, telemetry
-    Video/                     MJPEG stream reader
+    Video/                     RTSP client, RTP/H.264 depacketizer, VideoToolbox decoder
     Media/                     photos & videos on the rover
     Network/                   Mac network status, rover scanner
     Provisioning/              Wi‑Fi setup through JupyterLab
@@ -110,11 +111,12 @@ Tools/                         icon renderer, mock rover
 
 - **Socket.IO** (`:5000`, Engine.IO v4)
   - `/json` carries ESP32 commands such as `{"T":1,"L":0.3,"R":0.3}`. Drive commands repeat every 200 ms while held, because the ESP32 stops on its own when they stop coming.
-  - `/ctrl` carries mode codes as `{"A":10303,"B":0,"C":0}`. Telemetry comes back as `update` events.
+  - `/ctrl` carries commands as a `message` with `{"cmd":X,"mode":Y}`, like the web UI's `cmdSend`: vision `{"cmd":101,"mode":10303}`, head light `{"cmd":102,"mode":10405}`, reaction `103`, movement lock `114` (`10501`/`10502`), chassis light `115` (PWM), photo `{"cmd":10201,"mode":0}`, record `{"cmd":10203,"mode":1|0}`, zoom `{"cmd":10104,"mode":1|2|4}`. Telemetry comes back as `update` events (key 101 as a float, 102 as 0/1/2 = off/auto/on).
+- **Video**: H.264 from the rover's mediamtx at `rtsp://<ip>:8554/cam` (the port is the web port + 3554). The app reads it over RTSP with RTP interleaved on the TCP connection, decodes with VideoToolbox in hardware and shows each frame immediately on an `AVSampleBufferDisplayLayer`; the same frames feed Follow and Save Frame. It reconnects on its own. The rover's x264 sends a keyframe only every ~8 s, so a fresh connection can take that long to show the first picture. (mediamtx also offers WebRTC/WHEP on :8889, used by the rover's own web page.)
 - **HTTP**
   - `POST /send_command` (`base -c {…}`) is the fallback for driving and powers the console.
-  - `/video_feed` is the MJPEG camera stream.
-  - `/get_photo_names`, `/pictures/…`, `/get_video_names`, `/videos/…`, `/delete_photo` and `/delete_video` serve the media gallery.
+  - `/config` returns the rover's config.yaml (used to show the camera resolution).
+  - `/get_photo_names`, `/media/pictures/…`, `/get_video_names`, `/videos/…`, `/delete_photo` and `/delete_video` serve the media gallery (the rover's sample `placeholder_*` files are hidden).
 - **JupyterLab** (`:8888`): its terminal websocket is used for the Wi‑Fi setup.
 
 ## Development
@@ -124,7 +126,10 @@ Set `UGV_ROVER_HOST=127.0.0.1:5055` to point the app at a mock rover without tou
 ```bash
 swift build
 Tools/test.sh                                     # unit tests (works around a SwiftPM cache bug)
-# against the mock rover (Tools/mock-rover/README.md):
+# against the real rover (needs it at that address):
+UGV_TEST_ROVER=192.168.0.111 Tools/test.sh --filter MockRoverTests
+UGV_TEST_CAMERA_SETUP=192.168.0.111 Tools/test.sh --filter CameraSetupLive   # restarts the rover's program
+# against the mock rover (Tools/mock-rover/README.md; video needs ffmpeg):
 UGV_TEST_ROVER=127.0.0.1:5055 UGV_TEST_ROVER_LOG=$PWD/Tools/mock-rover/data/commands.log Tools/test.sh
 # closed-loop Follow test: the mock simulates a camera that turns and moves
 python Tools/mock-rover/mock_rover.py 5056 --world cat.jpg   # needs Pillow

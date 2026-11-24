@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Photos and videos stored on the rover (ugv_rpi `/get_photo_names`, `/pictures/…`,
+/// Photos and videos stored on the rover (ugv_rpi `/get_photo_names`, `/media/pictures/…`,
 /// `/get_video_names`, `/videos/…`, `/delete_photo`, `/delete_video`).
 @MainActor
 @Observable
@@ -10,7 +10,7 @@ public final class MediaLibrary {
         case photos, videos
         public var id: String { rawValue }
         var listPath: String { self == .photos ? "get_photo_names" : "get_video_names" }
-        var filePath: String { self == .photos ? "pictures" : "videos" }
+        var filePath: String { self == .photos ? "media/pictures" : "videos" }
         var deletePath: String { self == .photos ? "delete_photo" : "delete_video" }
     }
 
@@ -65,6 +65,11 @@ public final class MediaLibrary {
 
     private func list(_ kind: Kind, base: URL) async throws -> [String] {
         let (data, _) = try await URLSession.shared.data(from: base.appendingPathComponent(kind.listPath))
-        return (try JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+        return Self.userFiles((try JSONSerialization.jsonObject(with: data) as? [String]) ?? [])
+    }
+
+    /// The rover ships sample files (`placeholder_1.jpg` …) for its web gallery; they aren't the user's.
+    static func userFiles(_ names: [String]) -> [String] {
+        names.filter { !$0.hasPrefix("placeholder_") }
     }
 }

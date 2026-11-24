@@ -4,7 +4,7 @@ import RoverKit
 struct MainToolbar: ToolbarContent {
     @ObservedObject var window: WindowState
     @Environment(RoverClient.self) private var rover
-    @Environment(MJPEGStream.self) private var video
+    @Environment(VideoStream.self) private var video
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .navigation) { ConnectionPill() }
@@ -16,7 +16,7 @@ struct MainToolbar: ToolbarContent {
                 Label("Save Frame", systemImage: "square.and.arrow.down")
             }
             .help("Save the current camera frame as a JPEG to Pictures › UGV Rover on this Mac (⌘S). Unlike the camera button below, nothing is stored on the rover.")
-            .disabled(video.image == nil)
+            .disabled(!video.hasFrame)
 
             Button {
                 if video.isRunning { video.stop() } else if let u = rover.videoURL { video.start(url: u) }

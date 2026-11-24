@@ -62,7 +62,7 @@ struct FollowSimTests {
     @Test func turnsToTheCatThenApproachesAndStops() async throws {
         let rover = RoverClient()
         rover.host = host
-        let video = MJPEGStream()
+        let video = VideoStream()
         await rover.connect()
         video.start(url: rover.videoURL!)
         let follow = FollowController(rover: rover, video: video, claude: ClaudeVision(apiKey: { nil }))
@@ -140,7 +140,7 @@ struct FarTargetTests {
     @Test func spotsASmallDistantCatAndClosesIn() async throws {
         let rover = RoverClient()
         rover.host = host
-        let video = MJPEGStream()
+        let video = VideoStream()
         await rover.connect()
         var reset = URLRequest(url: URL(string: "http://\(host)/sim/reset")!)
         reset.httpMethod = "POST"

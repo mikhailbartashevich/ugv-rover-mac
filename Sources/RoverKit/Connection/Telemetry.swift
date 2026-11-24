@@ -44,9 +44,11 @@ public struct Telemetry: Sendable, Equatable {
         if let v = num(110) { tilt = v }
         if let v = num(104) { picturesMB = v }
         if let v = num(105) { videosMB = v }
-        if let v = num(101) { visionMode = VisionMode(rawValue: Int(v)) }
-        if let v = num(103) { reaction = DetectionReaction(rawValue: Int(v)) }
-        if let v = num(102) { headLight = HeadLight(rawValue: Int(v)) }
+        // The host echoes back the `mode` it was sent, as a float (10303.0).
+        if let v = num(101) { visionMode = VisionMode(rawValue: Int(v.rounded())) }
+        if let v = num(103) { reaction = DetectionReaction(rawValue: Int(v.rounded())) }
+        // led_mode: 0 off, 1 auto, 2 on.
+        if let v = num(102) { headLight = HeadLight(rawValue: Int(v.rounded())) }
         if let v = num(115) { chassisLightOn = v != 0 }
         if let b = d["114"] as? Bool { movementLocked = b }
     }

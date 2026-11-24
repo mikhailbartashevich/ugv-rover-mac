@@ -13,26 +13,54 @@ public struct CameraResolution: Hashable, Identifiable, Sendable {
         CameraResolution(width: 1024, height: 768),
         CameraResolution(width: 1280, height: 960),
     ]
-    public static let standard = options[0]
+    /// The rover's default (ugv_rpi config.yaml).
+    public static let standard = options[2]
 }
 
-/// Changes the camera resolution in the rover's config.yaml (default_res_w/h) through
-/// its JupyterLab terminal, then restarts the rover's program so it takes effect.
-/// The original config is kept as config.yaml.bak-ugvcontrol. USB cameras are also
-/// switched to MJPG in cv_ctrl.py (backup: cv_ctrl.py.bak-ugvcontrol), without which
-/// high resolutions drop to a few dark frames per second.
+/// Changes the camera resolution in the rover's config.yaml (`video.default_res_w/h`)
+/// through its JupyterLab terminal, then restarts the rover's program (and the mediamtx
+/// and ffmpeg it runs for the H.264 stream) so it takes effect. The original config is
+/// kept as config.yaml.bak-ugvcontrol.
 @MainActor
 @Observable
 public final class CameraSetup {
     public private(set) var isRunning = false
     public private(set) var status: String?
     public private(set) var error: String?
-    /// What this app last applied (the rover can't be asked).
+    /// The resolution in the rover's config (read from its `/config`), or what this app last applied.
     public private(set) var applied: CameraResolution
 
     public init() {
         let saved = UserDefaults.standard.string(forKey: "cameraResolution")
         applied = CameraResolution.options.first { $0.id == saved } ?? .standard
+    }
+
+    /// Reads the configured resolution from the rover (`GET /config` returns its config.yaml).
+    public func refresh(rover: RoverClient) async {
+        guard !isRunning, let url = rover.baseURL?.appendingPathComponent("config") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let res = Self.resolution(inConfig: String(decoding: data, as: UTF8.self)) else { return }
+        setApplied(res)
+    }
+
+    nonisolated static func resolution(inConfig yaml: String) -> CameraResolution? {
+        func value(_ key: String) -> Int? {
+            for line in yaml.split(separator: "\n") {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix(key + ":") { return Int(t.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)) }
+            }
+            return nil
+        }
+        guard let w = value("default_res_w"), let h = value("default_res_h") else { return nil }
+        return CameraResolution(width: w, height: h)
+    }
+
+    private func setApplied(_ res: CameraResolution) {
+        applied = res
+        UserDefaults.standard.set(res.id, forKey: "cameraResolution")
     }
 
     public func apply(_ res: CameraResolution, rover: RoverClient) async {
@@ -47,16 +75,15 @@ public final class CameraSetup {
                 throw ProvisionError("Can't reach JupyterLab on the rover (port 8888): \(error.localizedDescription)")
             }
             status = "Updating config.yaml and restarting the rover's program…"
-            let out = try await term.runScript(Self.script(res), timeout: 30)
+            let out = try await term.runScript(Self.script(res), timeout: 40)
             await term.close()
             if let reason = ProvisionScript.value(after: ProvisionScript.failMarker, in: out) {
                 throw ProvisionError("The rover couldn't change the resolution: \(reason)")
             }
-            applied = res
-            UserDefaults.standard.set(res.id, forKey: "cameraResolution")
+            setApplied(res)
 
             status = "Waiting for the rover to come back…"
-            let deadline = Date().addingTimeInterval(60)
+            let deadline = Date().addingTimeInterval(90)
             try await Task.sleep(for: .seconds(4))
             while Date() < deadline {
                 await rover.connect()
@@ -76,6 +103,8 @@ public final class CameraSetup {
 
     /// Finds the running app.py, edits its config.yaml and restarts it the way the
     /// rover's crontab starts it (same Python, same script, output to ~/ugv.log).
+    /// app.py runs mediamtx (RTSP/WebRTC server) and ffmpeg (H.264 encoder) as children;
+    /// they're stopped too, so the new program can take the camera and the ports.
     nonisolated static func script(_ r: CameraResolution) -> String {
         """
         fail() { echo "\(ProvisionScript.failMarker) $1"; rm -f "$0"; exit 1; }
@@ -93,32 +122,18 @@ public final class CameraSetup {
         [ -f "$CFG" ] || fail "config.yaml not found next to $APP"
         [ -f "$CFG.bak-ugvcontrol" ] || cp "$CFG" "$CFG.bak-ugvcontrol"
         sed -i -E 's/^([[:space:]]*default_res_w:).*/\\1 \(r.width)/; s/^([[:space:]]*default_res_h:).*/\\1 \(r.height)/' "$CFG"
-        grep -q "default_res_w: \(r.width)" "$CFG" || fail "couldn't edit $CFG"
+        grep -q "default_res_w: \(r.width)" "$CFG" && grep -q "default_res_h: \(r.height)" "$CFG" || fail "couldn't edit $CFG"
         echo "\(ProvisionScript.infoMarker) $CFG"
-        # USB cameras opened without a format fall back to uncompressed YUYV, which is
-        # ~5 fps (and dark) at high resolutions. Ask OpenCV for MJPG instead.
-        CV="$DIR/cv_ctrl.py"
-        if [ -f "$CV" ] && ! grep -q "UGVControl: MJPG" "$CV"; then
-          [ -f "$CV.bak-ugvcontrol" ] || cp "$CV" "$CV.bak-ugvcontrol"
-          python3 - "$CV" <<'PY' || fail "couldn't patch cv_ctrl.py"
-        import sys
-        p = sys.argv[1]
-        lines = open(p).read().split("\\n")
-        out = []
-        for i, line in enumerate(lines):
-            out.append(line)
-            if line.strip() == "self.camera = cv2.VideoCapture(0)":
-                ind = line[:len(line) - len(line.lstrip())]
-                out.append(ind + "self.camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # UGVControl: MJPG")
-                nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
-                if not nxt.startswith("self.camera.set(cv2.CAP_PROP_FRAME_WIDTH"):
-                    out.append(ind + "self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, f['video']['default_res_w'])")
-                    out.append(ind + "self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, f['video']['default_res_h'])")
-        open(p, "w").write("\\n".join(out))
-        PY
-          grep -q "UGVControl: MJPG" "$CV" || fail "couldn't patch cv_ctrl.py"
-        fi
-        kill "$P"; sleep 2; kill -9 "$P" 2>/dev/null
+        # Children (mediamtx, ffmpeg) are reparented once app.py exits, so note them first.
+        KIDS=$(pgrep -P "$P" | tr '\\n' ' ')
+        kill "$P" $KIDS 2>/dev/null
+        for i in 1 2 3 4 5 6; do
+          ALIVE=""; for k in $P $KIDS; do kill -0 "$k" 2>/dev/null && ALIVE="$ALIVE $k"; done
+          [ -z "$ALIVE" ] && break; sleep 0.5
+        done
+        [ -n "$ALIVE" ] && kill -9 $ALIVE 2>/dev/null
+        pkill -9 -f "$DIR/controllers/Mediamtx/mediamtx" 2>/dev/null
+        sleep 1
         export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
         cd "$HOME" && setsid nohup "$PY" "$APP" >> "$HOME/ugv.log" 2>&1 < /dev/null &
         rm -f "$0"
