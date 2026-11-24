@@ -77,12 +77,15 @@ public final class CameraSetup {
     nonisolated static func script(_ r: CameraResolution) -> String {
         """
         fail() { echo "\(ProvisionScript.failMarker) $1"; rm -f "$0"; exit 1; }
-        P=$(pgrep -f 'app\\.py' | head -1)
+        # The crontab starts app.py through `sh -c`; we want the Python process itself.
+        P=""
+        for p in $(pgrep -f 'app\\.py'); do
+          case "$(readlink /proc/$p/exe)" in *python*) P=$p; break ;; esac
+        done
         [ -n "$P" ] || fail "the rover's program (app.py) isn't running"
-        ARGS=$(tr '\\0' ' ' < /proc/$P/cmdline)
-        PY=$(echo "$ARGS" | awk '{print $1}')
-        APP=$(echo "$ARGS" | tr ' ' '\\n' | grep 'app\\.py$' | head -1)
-        case "$APP" in /*) ;; *) APP="$(readlink -f /proc/$P/cwd)/$APP" ;; esac
+        expand() { case "$1" in "~/"*) echo "$HOME/${1#??}" ;; /*) echo "$1" ;; *) echo "$(readlink -f /proc/$P/cwd)/$1" ;; esac; }
+        PY=$(expand "$(tr '\\0' '\\n' < /proc/$P/cmdline | sed -n 1p)")
+        APP=$(expand "$(tr '\\0' '\\n' < /proc/$P/cmdline | grep 'app\\.py$' | head -1)")
         DIR=$(dirname "$APP")
         CFG="$DIR/config.yaml"
         [ -f "$CFG" ] || fail "config.yaml not found next to $APP"
@@ -91,7 +94,8 @@ public final class CameraSetup {
         grep -q "default_res_w: \(r.width)" "$CFG" || fail "couldn't edit $CFG"
         echo "\(ProvisionScript.infoMarker) $CFG"
         kill "$P"; sleep 2; kill -9 "$P" 2>/dev/null
-        cd "$DIR" && setsid nohup "$PY" "$APP" >> "$HOME/ugv.log" 2>&1 < /dev/null &
+        export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        cd "$HOME" && setsid nohup "$PY" "$APP" >> "$HOME/ugv.log" 2>&1 < /dev/null &
         rm -f "$0"
         echo "\(ProvisionScript.okMarker)"
         """

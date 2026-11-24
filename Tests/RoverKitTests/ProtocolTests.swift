@@ -70,7 +70,8 @@ struct CameraSetupScriptTests {
         let s = CameraSetup.script(CameraResolution(width: 1280, height: 960))
         #expect(s.contains("default_res_w:).*/\\1 1280"))
         #expect(s.contains("default_res_h:).*/\\1 960"))
-        #expect(s.contains("config.yaml.bak-ugvcontrol"))
+        #expect(s.contains("$CFG.bak-ugvcontrol"))
+        #expect(s.contains("readlink /proc/$p/exe"), "picks the Python process, not the sh wrapper")
         #expect(s.contains("setsid nohup"))
         #expect(s.contains(ProvisionScript.okMarker) && s.contains(ProvisionScript.failMarker))
     }
